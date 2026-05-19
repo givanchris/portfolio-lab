@@ -8,6 +8,7 @@ __pycache__/
 *.pyc
 .DS_Store
 Archive/
+pages/
 *.pdf
 portfolio_plan_*.md
 portfolio_review_*.md

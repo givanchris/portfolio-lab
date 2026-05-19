@@ -1,0 +1,16 @@
+holdings.json
+price_cache.json
+lab_scenarios.json
+generate_demo_holdings.py
+monte_carlo_current_only.json
+monte_carlo_results.json
+__pycache__/
+*.pyc
+.DS_Store
+Archive/
+*.pdf
+portfolio_plan_*.md
+portfolio_review_*.md
+monte_carlo_report_*.md
+BLOOMBERG_FEATURES_BACKLOG.md
+LAB_README.md

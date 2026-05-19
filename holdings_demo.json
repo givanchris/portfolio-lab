@@ -1,0 +1,142 @@
+{
+  "as_of": "2026-05-18",
+  "account": {
+    "portfolio_market_value": 12388.1,
+    "cash": 500.0,
+    "total_account_value": 12888.1,
+    "incoming_cash": 0,
+    "monthly_contribution": 0,
+    "investor_age": 23,
+    "horizon_years_est": 40,
+    "risk_tolerance": "HIGH",
+    "objective": "maximize long-term returns while controlling concentration risk"
+  },
+  "holdings": [
+    {
+      "ticker": "MRVL",
+      "shares": 5,
+      "avg_cost": 168.93,
+      "thesis": "Custom silicon (XPU/ASIC) for hyperscaler AI clusters; electro-optical/photonic interconnect roadmap. Revenue inflection driven by Amazon Trainium and Google TPU ramp."
+    },
+    {
+      "ticker": "AVGO",
+      "shares": 2,
+      "avg_cost": 420.71,
+      "thesis": "Dominant AI networking franchise (Ethernet switching, custom XPU for Meta and Alphabet) layered on top of a VMware integration that prints free cash flow."
+    },
+    {
+      "ticker": "GOOG",
+      "shares": 3,
+      "avg_cost": 393.11,
+      "thesis": "Cheapest AI mega-cap on a P/E basis with proprietary TPU infrastructure, Search monopoly optionality, and a YouTube/Cloud engine that funds it all."
+    },
+    {
+      "ticker": "ALAB",
+      "shares": 5,
+      "avg_cost": 215.58,
+      "thesis": "Pure-play AI cluster connectivity \u2014 PCIe 5.0/6.0 retimers and CXL switches are critical path for 100k+ GPU rack scale."
+    },
+    {
+      "ticker": "AMAT",
+      "shares": 2,
+      "avg_cost": 413.57,
+      "thesis": "Deposition and etch equipment that is unavoidable at every advanced node below 3nm. AI-driven demand for leading-edge logic and HBM DRAM creates a multi-year equipment supercycle."
+    },
+    {
+      "ticker": "CEG",
+      "shares": 2,
+      "avg_cost": 262.0,
+      "thesis": "Largest US nuclear fleet operator at a moment when data centers are signing decade-long carbon-free PPAs at premium rates."
+    },
+    {
+      "ticker": "ASML",
+      "shares": 1,
+      "avg_cost": 1472.39,
+      "thesis": "EUV lithography monopoly \u2014 no path to advanced logic or DRAM below 7nm without ASML. High-NA EUV extends the moat for another decade."
+    },
+    {
+      "ticker": "COHR",
+      "shares": 3,
+      "avg_cost": 362.83,
+      "thesis": "800G and 1.6T optical transceivers are the bandwidth bottleneck inside every AI cluster. COHR is ramping silicon photonics at a time when competitors are capacity-constrained."
+    },
+    {
+      "ticker": "HUBB",
+      "shares": 1,
+      "avg_cost": 470.87,
+      "thesis": "Electrical grid infrastructure play \u2014 switchgear, connectors, and power quality products riding the data center and transmission build-out."
+    },
+    {
+      "ticker": "TCEHY",
+      "shares": 10,
+      "avg_cost": 57.43,
+      "thesis": "Dominant Chinese internet platform trading at a discount \u2014 WeChat ecosystem stickiness is near-impossible to replicate, and gaming/fintech optionality is substantial."
+    },
+    {
+      "ticker": "LEU",
+      "shares": 3,
+      "avg_cost": 172.95,
+      "thesis": "Only DOE-licensed domestic uranium enrichment facility in the US; strategic moat in a post-Ukraine supply chain that governments are actively trying to decouple from Russia."
+    },
+    {
+      "ticker": "CRWV",
+      "shares": 4,
+      "avg_cost": 103.77,
+      "thesis": "NVIDIA-backed GPU cloud at scale \u2014 CoreWeave has committed capacity that hyperscalers could not build fast enough. AI training demand is backlogged years out."
+    },
+    {
+      "ticker": "MOG-A",
+      "shares": 1,
+      "avg_cost": 306.2,
+      "thesis": "Aerospace and defense actuation systems \u2014 flight controls, space launch mechanisms, defense program hardware. Recurring revenue from long-duration government programs."
+    },
+    {
+      "ticker": "MIR",
+      "shares": 20,
+      "avg_cost": 18.03,
+      "thesis": "Radiation detection and nuclear measurement services benefiting from the global nuclear renaissance. New build, reactor uprates, and decommissioning all drive demand."
+    },
+    {
+      "ticker": "UUUU",
+      "shares": 15,
+      "avg_cost": 17.4,
+      "thesis": "Domestic uranium producer with a rare earth byproduct stream \u2014 two strategic commodities in one vehicle."
+    },
+    {
+      "ticker": "HOOD",
+      "shares": 5,
+      "avg_cost": 77.15,
+      "thesis": "Retail brokerage platform with crypto, 24-hour trading, and a young user base that will compound AUM over decades."
+    },
+    {
+      "ticker": "SOLS",
+      "shares": 4,
+      "avg_cost": 82.07,
+      "thesis": "Solar energy play riding the data center power demand buildout."
+    },
+    {
+      "ticker": "VELO",
+      "shares": 20,
+      "avg_cost": 18.63,
+      "thesis": "High-performance compute and AI infrastructure exposure."
+    },
+    {
+      "ticker": "PATH",
+      "shares": 25,
+      "avg_cost": 10.64,
+      "thesis": "Enterprise RPA platform with a large installed base of automation workflows. AI co-pilot layer adds stickiness."
+    },
+    {
+      "ticker": "APLD",
+      "shares": 5,
+      "avg_cost": 39.14,
+      "thesis": "AI data center and HPC colocation operator; GPU cluster operations for enterprise AI workloads."
+    },
+    {
+      "ticker": "XRP",
+      "shares": 5,
+      "avg_cost": 15.51,
+      "thesis": "Cross-border payment settlement rail with regulatory clarity post-SEC lawsuit. Sized as an asymmetric tail bet."
+    }
+  ]
+}

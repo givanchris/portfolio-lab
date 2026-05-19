@@ -27,6 +27,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import scipy.stats
 import streamlit as st
 import yfinance as yf
 import matplotlib.pyplot as plt
@@ -434,11 +435,63 @@ URA_MU    = 0.10   # uranium ETF (URA) — hand-set
 URA_SIGMA = 0.35
 
 REGIMES = {
-    "Base case": {"mu_shift": 0.00, "ai_shift": 0.00, "vol_mult": 1.00},
-    "AI boom":   {"mu_shift": 0.00, "ai_shift": 0.20, "vol_mult": 0.85},
-    "Risk-off":  {"mu_shift": -0.20, "ai_shift": -0.25, "vol_mult": 1.40},
-    "Mild bear": {"mu_shift": -0.10, "ai_shift": -0.10, "vol_mult": 1.20},
-    "Custom":    {"mu_shift": 0.00, "ai_shift": 0.00, "vol_mult": 1.00},
+    # ── Original scenarios ──────────────────────────────────────────────────
+    "Base case": {
+        "mu_shift": 0.00, "ai_shift": 0.00, "vol_mult": 1.00,
+    },
+    "AI boom": {
+        "mu_shift": 0.00, "ai_shift": 0.20, "vol_mult": 0.85,
+        "f_ai_mult": 1.10, "p_enter_mult": 0.70,
+    },
+    "Risk-off": {
+        "mu_shift": -0.20, "ai_shift": -0.25, "vol_mult": 1.40,
+        "f_m_mult": 1.20, "p_enter_mult": 2.00, "tdist_df": 7,
+    },
+    "Mild bear": {
+        "mu_shift": -0.10, "ai_shift": -0.10, "vol_mult": 1.20,
+        "p_enter_mult": 1.30, "tdist_df": 10,
+    },
+    # ── New scenarios ────────────────────────────────────────────────────────
+    "Soft landing": {
+        # Fed threads the needle: below-average crash risk, benign vol
+        "mu_shift": 0.03, "ai_shift": 0.08, "vol_mult": 0.75,
+        "f_ai_mult": 1.05, "f_m_mult": 0.95, "p_enter_mult": 0.40,
+    },
+    "Rate shock": {
+        # Fed hiking cycle (2022 analog): growth/AI stocks derate on duration
+        "mu_shift": -0.20, "ai_shift": -0.20, "vol_mult": 1.40,
+        "f_ai_mult": 0.65, "f_m_mult": 1.15, "p_enter_mult": 1.80,
+        "tdist_df": 6,
+    },
+    "Stagflation": {
+        # High inflation + stagnant growth (1970s analog): real returns negative
+        "mu_shift": -0.12, "ai_shift": -0.08, "vol_mult": 1.25,
+        "f_ai_mult": 0.55, "f_m_mult": 0.85, "p_enter_mult": 1.40,
+        "tdist_df": 7,
+    },
+    "AI winter": {
+        # AI monetization disappoints; sentiment reversal with jump risk
+        "mu_shift": -0.05, "ai_shift": -0.55, "vol_mult": 1.80,
+        "f_ai_mult": 1.40, "f_m_mult": 0.90, "p_enter_mult": 2.00,
+        "tdist_df": 5, "use_jumps": True,
+        "jump_lambda": 2.0, "jump_mu_j": -0.12, "jump_sigma_j": 0.08,
+    },
+    "Tech regulation": {
+        # DOJ/EU antitrust: AI beta compressed, lower-magnitude than AI winter
+        "mu_shift": -0.08, "ai_shift": -0.15, "vol_mult": 1.30,
+        "f_ai_mult": 0.70, "f_m_mult": 1.05, "p_enter_mult": 1.20,
+        "tdist_df": 8,
+    },
+    "Flash crash": {
+        # Extreme tail: 2008/COVID analog; very fat tails, jump-driven selloff
+        "mu_shift": -0.35, "ai_shift": -0.40, "vol_mult": 3.00,
+        "f_ai_mult": 1.50, "f_m_mult": 1.50, "p_enter_mult": 5.00,
+        "tdist_df": 3, "use_jumps": True,
+        "jump_lambda": 4.0, "jump_mu_j": -0.20, "jump_sigma_j": 0.15,
+    },
+    "Custom": {
+        "mu_shift": 0.00, "ai_shift": 0.00, "vol_mult": 1.00,
+    },
 }
 
 # Two-state regime-switching parameters for the MC engine.
@@ -472,11 +525,17 @@ _PRESET_META: dict[str, dict] = {
 }
 
 _SCENARIO_META: dict[str, dict] = {
-    "Base case": {"icon": "📊", "label": "Base Case",  "desc": "Historical average returns, normal vol regime"},
-    "AI boom":   {"icon": "🚀", "label": "AI Boom",    "desc": "AI factor μ +20%, systematic vol compressed −15%"},
-    "Risk-off":  {"icon": "🛡️", "label": "Risk-Off",   "desc": "Broad μ −20%, AI factor −25%, vol +40%"},
-    "Mild bear": {"icon": "🐻", "label": "Mild Bear",  "desc": "μ −10%, vol ×1.2 — moderate multi-quarter correction"},
-    "Custom":    {"icon": "⚙️", "label": "Custom",     "desc": "Set μ shift, AI boost, and vol multiplier manually"},
+    "Base case":      {"icon": "📊", "label": "Base Case",      "desc": "Historical avg returns, normal vol, standard crash frequency"},
+    "AI boom":        {"icon": "🚀", "label": "AI Boom",        "desc": "AI factor μ +20%, vol compressed, lower crash probability"},
+    "Soft landing":   {"icon": "🌤️", "label": "Soft Landing",   "desc": "Fed threads needle — modest μ lift, vol ×0.75, crash risk halved"},
+    "Mild bear":      {"icon": "🐻", "label": "Mild Bear",      "desc": "μ −10%, vol ×1.2, mild fat tails — multi-quarter correction"},
+    "Risk-off":       {"icon": "🛡️", "label": "Risk-Off",       "desc": "Broad μ −20%, AI −25%, vol ×1.4, elevated crash frequency"},
+    "Rate shock":     {"icon": "📈", "label": "Rate Shock",     "desc": "2022 analog — AI beta compressed 35%, market beta spikes, t(6) tails"},
+    "Stagflation":    {"icon": "🔥", "label": "Stagflation",    "desc": "1970s analog — real returns negative, AI factor loses relevance"},
+    "Tech regulation":{"icon": "⚖️", "label": "Tech Reg",      "desc": "DOJ/EU antitrust — AI beta down 30%, vol ×1.3, t(8) tails"},
+    "AI winter":      {"icon": "❄️", "label": "AI Winter",      "desc": "Monetization disappoints — AI factor −55%, jumps (λ=2/yr), t(5) tails"},
+    "Flash crash":    {"icon": "💥", "label": "Flash Crash",    "desc": "Extreme tail — 2008/COVID analog; jumps (λ=4/yr), vol ×3, t(3) tails"},
+    "Custom":         {"icon": "⚙️", "label": "Custom",         "desc": "Set μ shift, AI boost, and vol multiplier manually"},
 }
 
 # ---------------------------------------------------------------------------
@@ -773,6 +832,110 @@ def factor_exposure(df: pd.DataFrame,
 # Monte Carlo engine
 # ---------------------------------------------------------------------------
 
+GARCH_CACHE_FP = HERE / "garch_cache.json"
+
+# Default Heston parameters (SPX-calibrated):
+# kappa=2 → ~6-month mean-reversion; xi=0.30 → vol-of-vol; rho=-0.70 → leverage effect.
+HESTON_DEFAULTS: dict = {
+    "v0":    SPX_SIGMA ** 2,
+    "kappa": 2.0,
+    "theta": SPX_SIGMA ** 2,
+    "xi":    0.30,
+    "rho":   -0.70,
+}
+
+
+def _sample_shocks(
+    rng: np.random.Generator, shape: int | tuple, tdist_df: int | None
+) -> np.ndarray:
+    """Draw unit-variance shocks — normal when tdist_df is None, Student's t otherwise."""
+    if tdist_df is None or tdist_df >= 100:
+        return rng.standard_normal(shape)
+    raw = scipy.stats.t.rvs(df=tdist_df, size=shape,
+                             random_state=int(rng.integers(2**31)))
+    return raw * np.sqrt((tdist_df - 2) / tdist_df)
+
+
+def _heston_vol_path(
+    rng: np.random.Generator,
+    n_paths: int,
+    n_months: int,
+    v0: float,
+    kappa: float,
+    theta: float,
+    xi: float,
+    rho: float,
+    Z_M_full: np.ndarray,
+) -> np.ndarray:
+    """Euler-Maruyama Heston variance path.
+
+    Returns vol_ratio (n_paths, n_months) = sqrt(v_t / theta).
+    Apply as a multiplicative scaler on factor shocks so stochastic vol
+    enters the portfolio return process.  Z_M_full supplies the correlated
+    Brownian component (leverage effect: rho < 0 → vol spikes on down moves).
+    """
+    dt = 1.0 / 12.0
+    v  = np.full(n_paths, v0, dtype=float)
+    vol_ratio = np.empty((n_paths, n_months))
+    for m in range(n_months):
+        Z_v = rho * Z_M_full[:, m] + np.sqrt(max(1 - rho**2, 0.0)) * rng.standard_normal(n_paths)
+        v   = np.maximum(
+            v + kappa * (theta - v) * dt + xi * np.sqrt(np.maximum(v, 0.0) * dt) * Z_v,
+            0.0,
+        )
+        vol_ratio[:, m] = np.sqrt(v / max(theta, 1e-30))
+    return vol_ratio
+
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def fit_garch_params(symbol: str = "SPY", lookback: str = "5y") -> dict:
+    """Fit GARCH(1,1)-t to daily returns and map to Heston theta/xi.
+
+    Result cached 24h in Streamlit and persisted to garch_cache.json.
+    Falls back to HESTON_DEFAULTS on any error.
+    """
+    try:
+        from arch import arch_model  # local import — arch is optional
+        import yfinance as _yf
+
+        prices  = _yf.download(symbol, period=lookback, progress=False, auto_adjust=True)
+        prices  = prices["Close"].dropna()
+        ret_pct = (np.log(prices / prices.shift(1)).dropna() * 100)
+
+        model  = arch_model(ret_pct, vol="Garch", p=1, q=1, dist="t")
+        res    = model.fit(disp="off", show_warning=False)
+        omega  = float(res.params["omega"]) / 10_000    # %-squared → decimal-squared
+        alpha  = float(res.params["alpha[1]"])
+        beta   = float(res.params["beta[1]"])
+        nu     = float(res.params.get("nu", 6.0))       # t-dist dof from GARCH fit
+        persist = alpha + beta
+
+        # Map GARCH(1,1) → Heston
+        theta_garch = omega / max(1.0 - persist, 1e-6)  # long-run variance
+        xi_garch    = alpha * np.sqrt(252.0)             # vol-of-vol approximation
+
+        params = {
+            "v0":     float(SPX_SIGMA ** 2),
+            "kappa":  float(max(2.0, 12.0 * (1.0 - persist))),
+            "theta":  float(np.clip(theta_garch, 0.005, 0.20)),
+            "xi":     float(np.clip(xi_garch, 0.05, 1.50)),
+            "rho":    -0.70,
+            "source": "garch",
+            "symbol": symbol,
+            "alpha":  alpha,
+            "beta":   beta,
+            "nu":     nu,
+        }
+        # Persist to disk so PDF and other processes can read without re-fitting
+        try:
+            GARCH_CACHE_FP.write_text(json.dumps(params, indent=2))
+        except Exception:
+            pass
+        return params
+    except Exception:
+        return dict(HESTON_DEFAULTS, source="defaults")
+
+
 def _stress_loadings(
     b_M: np.ndarray, b_AI: np.ndarray, b_PW: np.ndarray, s_idio: np.ndarray,
     vol_mult: float, sys_boost: float,
@@ -825,34 +988,74 @@ def simulate(
     regime: dict,
     seed: int = 42,
     two_state: bool = True,
+    use_heston: bool = False,
+    heston_params: dict | None = None,
 ):
     rng = np.random.default_rng(seed)
     n   = len(df)
     if n == 0 or starting_mv <= 0:
         return None, None
 
-    w        = df["weight"].to_numpy()
-    mu_ann   = df["mu"].to_numpy() + regime["mu_shift"]
-    sig_ann  = df["sigma"].to_numpy() * regime["vol_mult"]
-    f_M      = df["f_market"].to_numpy()
-    f_AI     = df["f_ai"].to_numpy()
-    f_PW     = df["f_power"].to_numpy()
-    ai_shift = regime["ai_shift"]
+    w       = df["weight"].to_numpy()
+    mu_ann  = df["mu"].to_numpy() + regime["mu_shift"]
+    sig_ann = df["sigma"].to_numpy() * regime["vol_mult"]
 
-    s_m    = sig_ann * np.sqrt(1/12)
-    b_M    = s_m * np.sqrt(np.clip(f_M, 0, 1))
-    b_AI   = s_m * np.sqrt(np.clip(f_AI, 0, 1))
-    b_PW   = s_m * np.sqrt(np.clip(f_PW, 0, 1))
-    s_idio = s_m * np.sqrt(np.clip(1 - f_M - f_AI - f_PW, 0, 1))
-    drift  = (mu_ann - sig_ann**2 / 2) / 12
-    ai_drift_per_month = ai_shift / 12
+    # Scenario-specific factor loading multipliers
+    f_ai_mult = regime.get("f_ai_mult", 1.0)
+    f_m_mult  = regime.get("f_m_mult",  1.0)
+    f_pw_mult = regime.get("f_pw_mult", 1.0)
+    f_M  = np.clip(df["f_market"].to_numpy() * f_m_mult,  0.0, 1.0)
+    f_AI = np.clip(df["f_ai"].to_numpy()     * f_ai_mult, 0.0, 1.0)
+    f_PW = np.clip(df["f_power"].to_numpy()  * f_pw_mult, 0.0, 1.0)
+    # Renormalize so systematic fractions never exceed 1
+    total_f = f_M + f_AI + f_PW
+    scale   = np.where(total_f > 1.0, 1.0 / total_f, 1.0)
+    f_M *= scale; f_AI *= scale; f_PW *= scale
+
+    ai_shift     = regime["ai_shift"]
+    tdist_df     = regime.get("tdist_df",     None)
+    use_jumps    = regime.get("use_jumps",    False)
+    jump_lambda  = regime.get("jump_lambda",  0.0)
+    jump_mu_j    = regime.get("jump_mu_j",    -0.12)
+    jump_sigma_j = regime.get("jump_sigma_j", 0.08)
+
+    s_m    = sig_ann * np.sqrt(1.0 / 12.0)
+    b_M    = s_m * np.sqrt(np.clip(f_M,                       0.0, 1.0))
+    b_AI   = s_m * np.sqrt(np.clip(f_AI,                      0.0, 1.0))
+    b_PW   = s_m * np.sqrt(np.clip(f_PW,                      0.0, 1.0))
+    s_idio = s_m * np.sqrt(np.clip(1.0 - f_M - f_AI - f_PW,  0.0, 1.0))
+    drift  = (mu_ann - sig_ann ** 2 / 2.0) / 12.0
+    ai_drift_per_month = ai_shift / 12.0
+
+    # Stress transition probability with scenario override (capped at 50%/mo)
+    p_enter_mult = regime.get("p_enter_mult", 1.0)
+    p_enter      = min(STRESS_P_ENTER * p_enter_mult, 0.50)
 
     if two_state:
         bM_s, bAI_s, bPW_s, si_s = _stress_loadings(
             b_M, b_AI, b_PW, s_idio, STRESS_VOL_MULT, STRESS_SYS_BOOST
         )
-        stress_seq = _generate_states(rng, n_paths, n_months, STRESS_P_ENTER, STRESS_P_STAY)
-        spx_sm_s = SPX_SIGMA * regime["vol_mult"] * STRESS_VOL_MULT * np.sqrt(1/12)
+        stress_seq = _generate_states(rng, n_paths, n_months, p_enter, STRESS_P_STAY)
+        spx_sm_s = SPX_SIGMA * regime["vol_mult"] * STRESS_VOL_MULT * np.sqrt(1.0 / 12.0)
+
+    # Pre-generate market shocks for all months — needed for Heston correlation
+    Z_M_all = _sample_shocks(rng, (n_paths, n_months), tdist_df)
+
+    # Heston stochastic vol path
+    hp = heston_params if heston_params else HESTON_DEFAULTS
+    vol_ratio: np.ndarray | None = (
+        _heston_vol_path(
+            rng, n_paths, n_months,
+            v0=hp.get("v0", HESTON_DEFAULTS["v0"]),
+            kappa=hp.get("kappa", HESTON_DEFAULTS["kappa"]),
+            theta=hp.get("theta", HESTON_DEFAULTS["theta"]),
+            xi=hp.get("xi", HESTON_DEFAULTS["xi"]),
+            rho=hp.get("rho", HESTON_DEFAULTS["rho"]),
+            Z_M_full=Z_M_all,
+        )
+        if use_heston
+        else None
+    )
 
     V = np.broadcast_to(starting_mv * w, (n_paths, n)).copy()
     port = np.zeros((n_paths, n_months + 1))
@@ -860,46 +1063,67 @@ def simulate(
 
     spx       = np.zeros((n_paths, n_months + 1))
     spx[:, 0] = starting_mv
-    spx_drift = (SPX_MU + regime["mu_shift"] - (SPX_SIGMA * regime["vol_mult"])**2 / 2) / 12
-    spx_sm    = SPX_SIGMA * regime["vol_mult"] * np.sqrt(1/12)
+    spx_drift = (SPX_MU + regime["mu_shift"] - (SPX_SIGMA * regime["vol_mult"]) ** 2 / 2.0) / 12.0
+    spx_sm    = SPX_SIGMA * regime["vol_mult"] * np.sqrt(1.0 / 12.0)
 
     smh       = np.zeros((n_paths, n_months + 1))
     smh[:, 0] = starting_mv
-    smh_drift = (SMH_MU + regime["mu_shift"] - (SMH_SIGMA * regime["vol_mult"])**2 / 2) / 12
-    smh_sm    = SMH_SIGMA * regime["vol_mult"] * np.sqrt(1/12)
+    smh_drift = (SMH_MU + regime["mu_shift"] - (SMH_SIGMA * regime["vol_mult"]) ** 2 / 2.0) / 12.0
+    smh_sm    = SMH_SIGMA * regime["vol_mult"] * np.sqrt(1.0 / 12.0)
 
     ura       = np.zeros((n_paths, n_months + 1))
     ura[:, 0] = starting_mv
-    ura_drift = (URA_MU + regime["mu_shift"] - (URA_SIGMA * regime["vol_mult"])**2 / 2) / 12
-    ura_sm    = URA_SIGMA * regime["vol_mult"] * np.sqrt(1/12)
+    ura_drift = (URA_MU + regime["mu_shift"] - (URA_SIGMA * regime["vol_mult"]) ** 2 / 2.0) / 12.0
+    ura_sm    = URA_SIGMA * regime["vol_mult"] * np.sqrt(1.0 / 12.0)
 
     for m in range(1, n_months + 1):
-        Z_M  = rng.standard_normal(n_paths)
-        Z_AI = rng.standard_normal(n_paths)
-        Z_PW = rng.standard_normal(n_paths)
-        Z_i  = rng.standard_normal((n_paths, n))
+        Z_M  = Z_M_all[:, m - 1]                               # (n_paths,) — pre-generated
+        Z_AI = _sample_shocks(rng, n_paths, tdist_df)
+        Z_PW = _sample_shocks(rng, n_paths, tdist_df)
+        Z_i  = _sample_shocks(rng, (n_paths, n), tdist_df)
+
+        # Heston vol scaling (1.0 when Heston disabled)
+        if vol_ratio is not None:
+            vr = vol_ratio[:, m - 1, None]                     # (n_paths, 1)
+            vr_1d = vol_ratio[:, m - 1]                        # (n_paths,) for benchmarks
+        else:
+            vr = 1.0
+            vr_1d = 1.0
+
+        Z_M_sc  = Z_M[:, None] * vr
+        Z_AI_sc = Z_AI[:, None] * vr
+        Z_PW_sc = Z_PW[:, None] * vr
+        Z_i_sc  = Z_i           * vr
 
         if two_state:
-            is_s = stress_seq[:, m - 1, None]          # (n_paths, 1) bool
-            bM   = np.where(is_s, bM_s,  b_M)          # (n_paths, n)
+            is_s = stress_seq[:, m - 1, None]                  # (n_paths, 1) bool
+            bM   = np.where(is_s, bM_s,  b_M)
             bAI  = np.where(is_s, bAI_s, b_AI)
             bPW  = np.where(is_s, bPW_s, b_PW)
             si   = np.where(is_s, si_s,  s_idio)
-            sm   = np.where(stress_seq[:, m - 1], spx_sm_s, spx_sm)  # (n_paths,)
+            sm   = np.where(stress_seq[:, m - 1], spx_sm_s, spx_sm)
             log_r = (drift[None, :]
-                     + bM  * Z_M[:, None]
-                     + bAI * Z_AI[:, None]
-                     + bPW * Z_PW[:, None]
-                     + si  * Z_i
+                     + bM  * Z_M_sc
+                     + bAI * Z_AI_sc
+                     + bPW * Z_PW_sc
+                     + si  * Z_i_sc
                      + (ai_drift_per_month * f_AI)[None, :])
         else:
-            sm = spx_sm
+            sm    = spx_sm
             log_r = (drift[None, :]
-                     + b_M[None, :]    * Z_M[:, None]
-                     + b_AI[None, :]   * Z_AI[:, None]
-                     + b_PW[None, :]   * Z_PW[:, None]
-                     + s_idio[None, :] * Z_i
+                     + b_M[None, :]    * Z_M_sc
+                     + b_AI[None, :]   * Z_AI_sc
+                     + b_PW[None, :]   * Z_PW_sc
+                     + s_idio[None, :] * Z_i_sc
                      + (ai_drift_per_month * f_AI)[None, :])
+
+        # Merton jump-diffusion (Bernoulli approx valid for λ_mo < 0.3)
+        if use_jumps and jump_lambda > 0.0:
+            lambda_m       = jump_lambda / 12.0
+            jump_mask      = rng.random((n_paths, n)) < lambda_m
+            jump_size      = rng.normal(jump_mu_j, jump_sigma_j, (n_paths, n))
+            jump_correction = lambda_m * (np.exp(jump_mu_j + jump_sigma_j ** 2 / 2.0) - 1.0)
+            log_r          = log_r + jump_mask * jump_size - jump_correction
 
         V *= np.exp(log_r)
 
@@ -909,9 +1133,9 @@ def simulate(
             V += monthly_contrib * w[None, :]
 
         port[:, m] = V.sum(axis=1)
-        spx[:, m]  = spx[:, m-1] * np.exp(spx_drift + sm * Z_M)
-        smh[:, m]  = smh[:, m-1] * np.exp(smh_drift + smh_sm * Z_AI)
-        ura[:, m]  = ura[:, m-1] * np.exp(ura_drift + ura_sm * Z_PW)
+        spx[:, m]  = spx[:, m - 1] * np.exp(spx_drift + sm * Z_M * vr_1d)
+        smh[:, m]  = smh[:, m - 1] * np.exp(smh_drift + smh_sm * Z_AI * vr_1d)
+        ura[:, m]  = ura[:, m - 1] * np.exp(ura_drift + ura_sm * Z_PW * vr_1d)
 
         if lump_sum > 0 and m == lump_month:
             spx[:, m] += lump_sum
@@ -1397,6 +1621,35 @@ hist_period = st.sidebar.selectbox(
     help="Lookback window for vol & factor regression."
 )
 
+st.sidebar.markdown('<div class="sidebar-section"><span>MC Engine</span></div>', unsafe_allow_html=True)
+use_heston = st.sidebar.checkbox(
+    "Stochastic vol (Heston)",
+    value=False,
+    help="Adds Heston stochastic volatility: variance mean-reverts with a leverage "
+         "effect (vol spikes on market down moves). Calibrated via GARCH or defaults "
+         "to SPX empirical parameters (κ=2, θ=σ², ξ=0.30, ρ=−0.70).",
+)
+if use_heston:
+    if "heston_params" not in st.session_state:
+        st.session_state.heston_params = dict(HESTON_DEFAULTS)
+    if st.sidebar.button("Calibrate GARCH → Heston (SPY)", help="Fit GARCH(1,1)-t on 5yr SPY returns and map to Heston θ/ξ. Cached 24h."):
+        with st.spinner("Fitting GARCH(1,1)-t on SPY…"):
+            st.session_state.heston_params = fit_garch_params("SPY", "5y")
+        st.success("Heston parameters updated from GARCH fit.")
+    hp = st.session_state.heston_params
+    with st.sidebar.expander("Heston parameters", expanded=False):
+        src = hp.get("source", "defaults")
+        st.caption(f"Source: **{src}**")
+        st.metric("θ (long-run var)", f"{hp.get('theta', HESTON_DEFAULTS['theta']):.4f}")
+        st.metric("ξ (vol-of-vol)",   f"{hp.get('xi',    HESTON_DEFAULTS['xi']):.3f}")
+        st.metric("κ (mean-rev)",     f"{hp.get('kappa', HESTON_DEFAULTS['kappa']):.2f}")
+        st.metric("ρ (leverage)",     f"{hp.get('rho',   HESTON_DEFAULTS['rho']):.2f}")
+        if src == "garch":
+            st.caption(f"GARCH α={hp.get('alpha',0):.3f}  β={hp.get('beta',0):.3f}  ν={hp.get('nu',6):.1f}")
+    heston_params = st.session_state.heston_params
+else:
+    heston_params = None
+
 if st.sidebar.button("Force price refresh"):
     fetch_prices.clear()
     fetch_historical_prices.clear()
@@ -1543,28 +1796,39 @@ _divider()
 # ---------------------------------------------------------------------------
 
 _section_label("Market scenario")
-scen_cols = st.columns(len(_SCENARIO_META))
-for col, (key, meta) in zip(scen_cols, _SCENARIO_META.items()):
-    is_active = st.session_state.regime_name == key
-    with col:
-        badge = '<span class="sc-badge">Active</span>' if is_active else ''
-        st.markdown(
-            f'<div class="scenario-card{"  active" if is_active else ""}">'
-            f'<div class="sc-header"><span class="sc-icon">{meta["icon"]}</span>'
-            f'<span class="sc-name">{meta["label"]}</span>{badge}</div>'
-            f'<div class="sc-desc">{meta["desc"]}</div>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
-        if st.button(
-            "✓ Active" if is_active else "Apply",
-            key=f"scen_{key}",
-            use_container_width=True,
-            type="primary" if is_active else "secondary",
-            disabled=is_active,
-        ):
-            st.session_state.regime_name = key
-            st.rerun()
+
+# Scenarios grouped for display: two rows
+_SCEN_ROWS: list[list[str]] = [
+    ["Base case", "Soft landing", "AI boom", "Mild bear", "Risk-off", "Custom"],
+    ["Rate shock", "Stagflation", "Tech regulation", "AI winter", "Flash crash"],
+]
+
+for row_keys in _SCEN_ROWS:
+    row_cols = st.columns(len(row_keys))
+    for col, key in zip(row_cols, row_keys):
+        if key not in _SCENARIO_META:
+            continue
+        meta = _SCENARIO_META[key]
+        is_active = st.session_state.regime_name == key
+        with col:
+            badge = '<span class="sc-badge">Active</span>' if is_active else ''
+            st.markdown(
+                f'<div class="scenario-card{"  active" if is_active else ""}">'
+                f'<div class="sc-header"><span class="sc-icon">{meta["icon"]}</span>'
+                f'<span class="sc-name">{meta["label"]}</span>{badge}</div>'
+                f'<div class="sc-desc">{meta["desc"]}</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+            if st.button(
+                "✓ Active" if is_active else "Apply",
+                key=f"scen_{key}",
+                use_container_width=True,
+                type="primary" if is_active else "secondary",
+                disabled=is_active,
+            ):
+                st.session_state.regime_name = key
+                st.rerun()
 
 regime = dict(REGIMES[st.session_state.regime_name])
 if st.session_state.regime_name == "Custom":
@@ -1848,6 +2112,7 @@ for tab, name in zip(tabs, book_names):
             port, spx, smh, ura = simulate(
                 enriched_sim, int(n_paths), n_months, total_mv,
                 lump_sum, lump_mo, monthly, regime, seed=int(seed),
+                use_heston=use_heston, heston_params=heston_params,
             )
             deposits = total_mv + lump_sum + monthly * n_months
             stats    = summarize(port, spx, smh, ura, deposits)
@@ -2193,6 +2458,7 @@ with whatif_tab:
                 wf_port, wf_spx, wf_smh, wf_ura = simulate(
                     wf_sim_df, int(n_paths), n_months, src_mv,
                     lump_sum, lump_mo, monthly, regime, seed=int(seed),
+                    use_heston=use_heston, heston_params=heston_params,
                 )
             if wf_port is None:
                 st.warning("No paths simulated — check ticker prices.")
@@ -2498,9 +2764,12 @@ with st.expander("Save / load scenario snapshots"):
             st.caption("No snapshots saved yet.")
 
 st.caption(
-    "Engine: factor-model GBM (market + AI + power factors + idiosyncratic) with two-state "
-    "Markov regime switching. Stress state (~15% of months) scales vol ×1.5 and shifts variance "
-    "from idiosyncratic to systematic factors, spiking cross-asset correlations toward 1 as "
-    "observed in historical drawdowns. Lognormal returns, no fat tails. "
-    "Defaults loaded from holdings.json on first launch."
+    "Engine: factor-model GBM (market + AI + power factors + idiosyncratic) · "
+    "two-state Markov regime switching (calm/stress, ~15% months in stress, calibrated to NBER recessions) · "
+    "Scenario-specific factor loading multipliers (e.g. Rate Shock reduces AI beta 35%) · "
+    "Merton jump-diffusion (Poisson arrivals, log-normal jump sizes) active on AI Winter & Flash Crash · "
+    "Student's t shocks on tail scenarios (df 3–8) for realistic crash kurtosis · "
+    "Heston stochastic vol optional (sidebar toggle): Euler-Maruyama, leverage effect ρ=−0.70, "
+    "GARCH(1,1)-t calibration from SPY available via 'Calibrate' button. "
+    "μ stays hand-set per house rules; σ and factor loadings may use historical estimates."
 )

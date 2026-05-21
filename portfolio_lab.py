@@ -44,11 +44,11 @@ SCENARIOS_FP       = HERE / "lab_scenarios.json"
 PRICE_CACHE_FP     = HERE / "price_cache.json"
 CACHE_MAX_AGE_DAYS = 1
 
-NAVY = "#1e3a5f"
-GOLD = "#b8860b"
-RED  = "#c0392b"
+NAVY = "#0e2240"
+GOLD = "#2e74e8"
+RED  = "#e05a5a"
 
-st.set_page_config(page_title="Portfolio Lab", layout="wide", page_icon="📊")
+st.set_page_config(page_title="Portfolio Lab", layout="wide")
 
 # ---------------------------------------------------------------------------
 # CSS
@@ -56,290 +56,407 @@ st.set_page_config(page_title="Portfolio Lab", layout="wide", page_icon="📊")
 
 st.markdown("""
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Barlow:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
 
-  /* ══ Design tokens ════════════════════════════════════════════════ */
+  /* ── Tokens ──────────────────────────────────────────────────────── */
   :root {
-    --bg:     #e8edf5;
-    --card:   #ffffff;
-    --navy:   #1e3a5f;
-    --navy2:  #2d5282;
-    --accent: #3b82f6;
-    --green:  #059669;
-    --red:    #dc2626;
-    --amber:  #d97706;
-    --text:   #0f172a;
-    --text2:  #374151;
-    --muted:  #64748b;
-    --border: #e2e8f0;
-    --sh1: 0 1px 3px rgba(15,23,42,.07), 0 1px 2px rgba(15,23,42,.04);
-    --sh2: 0 4px 12px rgba(15,23,42,.09), 0 2px 4px rgba(15,23,42,.05);
-    --sh3: 0 12px 32px rgba(15,23,42,.14), 0 4px 8px rgba(15,23,42,.07);
-    --r1: 6px; --r2: 10px; --r3: 16px;
+    --bg:      #07101e;
+    --bg2:     #0c1828;
+    --card:    rgba(255,255,255,0.04);
+    --border:  rgba(255,255,255,0.08);
+    --border2: rgba(255,255,255,0.18);
+    --blue2:   #2e74e8;
+    --white:   #ffffff;
+    --text:    rgba(255,255,255,0.9);
+    --text2:   rgba(255,255,255,0.65);
+    --muted:   rgba(255,255,255,0.45);
+    --green:   #3ec97a;
+    --red:     #e05a5a;
+    --amber:   #f0a040;
   }
 
-  /* ══ Base ═════════════════════════════════════════════════════════ */
+  /* ── Base ────────────────────────────────────────────────────────── */
   html, body, .stApp {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+    font-family: 'Barlow', system-ui, sans-serif !important;
     background: var(--bg) !important;
+    color: var(--text) !important;
   }
-  .block-container { padding-top: 1.5rem !important; max-width: 1440px; }
-  h2, h3 { color: var(--text) !important; font-weight: 600; }
+  .block-container { padding-top: 1.5rem !important; max-width: 1440px !important; }
+  h1, h2, h3, h4 {
+    font-family: 'Barlow Condensed', sans-serif !important;
+    font-weight: 800 !important;
+    text-transform: uppercase !important;
+    letter-spacing: -0.01em !important;
+  }
 
-  /* ══ Sidebar ══════════════════════════════════════════════════════ */
+  /* ── Sidebar ─────────────────────────────────────────────────────── */
   [data-testid="stSidebar"] {
-    background: #060d1a !important;
-    border-right: 1px solid #0d1829 !important;
+    background: #040b14 !important;
+    border-right: 1px solid var(--border) !important;
   }
-  [data-testid="stSidebar"] * { color: #94a3b8 !important; }
-  [data-testid="stSidebar"] h1,
-  [data-testid="stSidebar"] h2,
-  [data-testid="stSidebar"] h3,
-  [data-testid="stSidebar"] strong { color: #f1f5f9 !important; }
+  [data-testid="stSidebar"] * { color: var(--muted) !important; }
+  [data-testid="stSidebar"] label {
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 0.58rem !important;
+    letter-spacing: 0.1em !important;
+    text-transform: uppercase !important;
+  }
   [data-testid="stSidebar"] input,
   [data-testid="stSidebar"] select {
-    background: #1e293b !important;
-    border-color: #334155 !important;
-    color: #e2e8f0 !important;
-    border-radius: var(--r1) !important;
+    background: rgba(255,255,255,0.05) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 0 !important;
+    color: var(--white) !important;
   }
   [data-testid="stSidebar"] [data-baseweb="slider"] > div:first-child {
-    background: #1e293b !important;
+    background: rgba(255,255,255,0.08) !important;
+    border-radius: 0 !important;
   }
   [data-testid="stSidebar"] [data-baseweb="slider"] > div:first-child > div {
-    background: var(--accent) !important;
+    background: var(--blue2) !important;
   }
   [data-testid="stSidebar"] [data-baseweb="slider"] [role="slider"] {
-    background: #60a5fa !important;
-    border-color: var(--accent) !important;
-    box-shadow: 0 0 0 4px rgba(59,130,246,0.28) !important;
+    background: var(--white) !important;
+    border: 2px solid var(--blue2) !important;
+    border-radius: 0 !important;
+    box-shadow: 0 0 0 4px rgba(46,116,232,0.2) !important;
   }
 
-  /* ══ Sidebar brand & sections ═════════════════════════════════════ */
+  /* ── Sidebar brand & sections ────────────────────────────────────── */
   .sidebar-brand {
-    padding: 18px 0 22px 0;
-    border-bottom: 1px solid #1e293b;
-    margin-bottom: 22px;
+    padding: 1.25rem 0 1.5rem;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 1.5rem;
   }
   .sb-name {
-    font-size: 1.05rem; font-weight: 700;
-    color: #f1f5f9 !important; letter-spacing: -0.02em;
+    font-family: 'Barlow Condensed', sans-serif !important;
+    font-size: 1.35rem !important; font-weight: 800 !important;
+    text-transform: uppercase !important; letter-spacing: 0.01em !important;
+    color: var(--white) !important;
   }
   .sb-sub {
-    font-size: 0.63rem; color: #475569 !important;
-    margin-top: 3px; text-transform: uppercase; letter-spacing: 0.14em;
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 0.55rem !important; letter-spacing: 0.12em !important;
+    text-transform: uppercase !important; color: var(--muted) !important;
+    margin-top: 0.25rem !important;
   }
   .sidebar-section {
-    margin: 22px 0 10px 0;
-    padding-bottom: 7px;
-    border-bottom: 1px solid #1e293b;
+    margin: 1.5rem 0 0.75rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border);
   }
   .sidebar-section span {
-    font-size: 0.64rem; font-weight: 700;
-    color: #475569 !important; text-transform: uppercase; letter-spacing: 0.14em;
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 0.55rem !important; font-weight: 500 !important;
+    text-transform: uppercase !important; letter-spacing: 0.12em !important;
+    color: var(--blue2) !important;
   }
 
-  /* ══ Hero ══════════════════════════════════════════════════════════ */
+  /* ── Hero ────────────────────────────────────────────────────────── */
   .hero {
-    background: linear-gradient(135deg, #060d1a 0%, #1e3a5f 48%, #2d5282 100%);
-    border-radius: var(--r3);
-    padding: 36px 44px;
-    margin-bottom: 32px;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-top: 2px solid var(--blue2);
+    padding: 2.25rem 2.5rem;
+    margin-bottom: 2rem;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 32px;
+    gap: 2rem;
     position: relative;
     overflow: hidden;
-    box-shadow: var(--sh3);
   }
   .hero::before {
-    content: ''; position: absolute;
-    top: -55%; right: -5%; width: 500px; height: 500px;
-    background: radial-gradient(circle, rgba(59,130,246,.18) 0%, transparent 65%);
-    pointer-events: none;
+    content: ''; position: absolute; inset: 0;
+    background-image: radial-gradient(circle, rgba(46,116,232,0.1) 1px, transparent 1px);
+    background-size: 24px 24px; pointer-events: none;
   }
   .hero-left { position: relative; z-index: 1; flex: 1; }
   .hero-eyebrow {
-    font-size: 0.62rem; font-weight: 700;
-    color: #60a5fa; letter-spacing: 0.20em;
-    text-transform: uppercase; margin-bottom: 10px;
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 0.6rem !important; letter-spacing: 0.14em !important;
+    text-transform: uppercase !important; color: var(--blue2) !important;
+    margin-bottom: 0.75rem !important;
+    display: flex; align-items: center; gap: 0.6rem;
+  }
+  .hero-eyebrow::before {
+    content: ''; display: inline-block;
+    width: 20px; height: 1.5px; background: var(--blue2);
   }
   .hero h1 {
-    font-size: 2.25rem; font-weight: 800;
-    color: #f8fafc !important; margin: 0 0 10px 0;
-    letter-spacing: -0.045em; line-height: 1.1;
+    font-family: 'Barlow Condensed', sans-serif !important;
+    font-size: 2.75rem !important; font-weight: 800 !important;
+    text-transform: uppercase !important; letter-spacing: -0.01em !important;
+    line-height: 0.95 !important; color: var(--white) !important;
+    margin: 0 0 0.85rem !important;
   }
   .hero-sub {
-    color: #94a3b8; font-size: 0.87rem;
-    margin: 0 0 20px 0; line-height: 1.65; max-width: 520px;
+    font-size: 0.82rem !important; color: var(--muted) !important;
+    line-height: 1.75 !important; margin: 0 0 1rem !important; max-width: 560px;
   }
-  .hero-pills { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .hero-pills { display: flex; gap: 8px; flex-wrap: wrap; }
   .hero-pill {
-    background: rgba(255,255,255,0.07);
-    color: #cbd5e1; border: 1px solid rgba(255,255,255,0.10);
-    border-radius: 20px; padding: 4px 13px;
-    font-size: 0.70rem; font-weight: 500;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.57rem; letter-spacing: 0.04em;
+    color: var(--muted); border: 1px solid var(--border); padding: 0.2rem 0.6rem;
   }
   .hero-pill.live {
-    background: rgba(5,150,105,.18);
-    color: #6ee7b7; border-color: rgba(5,150,105,.28);
+    color: var(--green); border-color: rgba(62,201,122,0.25);
+    background: rgba(62,201,122,0.07);
   }
-  .hero-right { display: flex; gap: 10px; position: relative; z-index: 1; flex-shrink: 0; }
-  .hero-stat {
-    background: rgba(255,255,255,0.06);
-    border: 1px solid rgba(255,255,255,0.10);
-    border-radius: var(--r2); padding: 18px 22px; text-align: center; min-width: 115px;
+  .hero-right {
+    display: flex; gap: 1px; background: var(--border);
+    border: 1px solid var(--border);
+    position: relative; z-index: 1; flex-shrink: 0;
   }
+  .hero-stat { background: var(--bg2); padding: 1.25rem 1.5rem; min-width: 100px; }
   .hs-val {
-    font-size: 1.30rem; font-weight: 700;
-    color: #f8fafc; letter-spacing: -0.025em;
+    font-family: 'Barlow Condensed', sans-serif !important;
+    font-size: 1.75rem !important; font-weight: 800 !important;
+    color: var(--white) !important; line-height: 1 !important;
+    text-transform: uppercase !important;
   }
   .hs-lbl {
-    font-size: 0.63rem; color: #94a3b8;
-    text-transform: uppercase; letter-spacing: 0.12em; margin-top: 5px;
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 0.52rem !important; letter-spacing: 0.1em !important;
+    text-transform: uppercase !important; color: var(--muted) !important;
+    margin-top: 0.3rem !important;
   }
 
-  /* ══ Section labels ════════════════════════════════════════════════ */
+  /* ── Section labels ──────────────────────────────────────────────── */
   .section-label {
-    margin: 30px 0 14px 0; padding-left: 12px;
-    border-left: 3px solid var(--navy); display: flex; align-items: center;
+    display: flex; align-items: center; gap: 0.6rem;
+    margin: 2rem 0 1rem;
+  }
+  .section-label::before {
+    content: ''; display: inline-block;
+    width: 24px; height: 1.5px; background: var(--blue2);
   }
   .section-label span {
-    font-size: 0.70rem; font-weight: 700;
-    color: var(--muted); text-transform: uppercase; letter-spacing: 0.13em;
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 0.6rem !important; letter-spacing: 0.14em !important;
+    text-transform: uppercase !important; color: var(--blue2) !important;
   }
 
-  /* ══ KPI cards ═════════════════════════════════════════════════════ */
-  .kpi-row { display: flex; gap: 10px; margin: 10px 0; }
-  .kpi {
-    flex: 1; min-width: 0;
-    background: var(--card); border-radius: var(--r2);
-    padding: 18px 20px; border: 1px solid var(--border);
-    border-top: 3px solid #e2e8f0; box-shadow: var(--sh2);
-    transition: transform .12s, box-shadow .12s;
+  /* ── KPI cards ───────────────────────────────────────────────────── */
+  .kpi-row {
+    display: flex; gap: 1px; background: var(--border);
+    border: 1px solid var(--border); margin: 1.25rem 0;
   }
-  .kpi:hover { transform: translateY(-1px); box-shadow: var(--sh3); }
-  .kpi.green { border-top-color: var(--green); }
-  .kpi.red   { border-top-color: var(--red); }
-  .kpi.blue  { border-top-color: var(--accent); }
-  .kpi.gold  { border-top-color: var(--amber); }
+  .kpi { flex: 1; min-width: 0; background: var(--bg2); padding: 1.25rem 1.5rem; }
   .kpi .kval {
-    font-size: 1.45rem; font-weight: 700;
-    color: var(--text); line-height: 1.15; letter-spacing: -0.025em;
+    font-family: 'Barlow Condensed', sans-serif !important;
+    font-size: 2rem !important; font-weight: 800 !important;
+    color: var(--white) !important; line-height: 1 !important;
+    text-transform: uppercase !important;
   }
+  .kpi.green .kval { color: var(--green) !important; }
+  .kpi.red   .kval { color: var(--red) !important; }
+  .kpi.gold  .kval { color: var(--amber) !important; }
   .kpi .klbl {
-    font-size: 0.66rem; color: var(--muted); font-weight: 600;
-    text-transform: uppercase; letter-spacing: 0.10em; margin-top: 6px;
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 0.55rem !important; letter-spacing: 0.12em !important;
+    text-transform: uppercase !important; color: var(--blue2) !important;
+    margin-top: 0.4rem !important;
   }
 
-  /* ══ Preset cards ══════════════════════════════════════════════════ */
+  /* ── Preset cards ────────────────────────────────────────────────── */
   .preset-card {
-    background: var(--card); border: 1.5px solid var(--border);
-    border-radius: var(--r2); padding: 16px; margin-bottom: 8px;
-    box-shadow: var(--sh1); transition: border-color .15s, box-shadow .15s;
-    min-height: 120px;
+    background: var(--card); border: 1px solid var(--border);
+    padding: 1.25rem 1.5rem; margin-bottom: 8px;
+    transition: border-color .15s; min-height: 120px;
   }
-  .preset-card.active {
-    border-color: var(--navy);
-    background: linear-gradient(135deg, #f0f5ff 0%, #f8faff 100%);
-    box-shadow: 0 0 0 3px rgba(30,58,95,.10), var(--sh2);
+  .preset-card.active { border-color: var(--blue2); background: rgba(46,116,232,0.08); }
+  .preset-card:hover:not(.active) { border-color: var(--border2); }
+  .pc-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem; }
+  .pc-icon {
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 0.55rem !important; letter-spacing: 0.1em !important;
+    color: var(--blue2) !important;
   }
-  .preset-card:hover:not(.active) { border-color: #cbd5e1; box-shadow: var(--sh2); }
-  .pc-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
-  .pc-icon { font-size: 1.5rem; line-height: 1; }
   .pc-badge {
-    font-size: 0.58rem; font-weight: 700; color: var(--navy);
-    background: rgba(30,58,95,.10); border-radius: 10px;
-    padding: 3px 8px; text-transform: uppercase; letter-spacing: 0.08em; display: none;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.52rem; color: var(--blue2) !important;
+    background: rgba(46,116,232,0.15); padding: 0.15rem 0.5rem;
+    text-transform: uppercase; letter-spacing: 0.08em; display: none;
   }
   .preset-card.active .pc-badge { display: inline-block; }
-  .pc-name { font-size: 0.86rem; font-weight: 700; color: var(--text); margin-bottom: 4px; }
-  .pc-desc { font-size: 0.71rem; color: var(--muted); line-height: 1.55; }
+  .pc-name {
+    font-family: 'Barlow Condensed', sans-serif !important;
+    font-size: 1rem !important; font-weight: 800 !important;
+    text-transform: uppercase !important; color: var(--white) !important;
+    margin-bottom: 0.35rem !important;
+  }
+  .pc-desc { font-size: 0.72rem !important; color: var(--muted) !important; line-height: 1.6 !important; }
 
-  /* ══ Scenario cards ════════════════════════════════════════════════ */
+  /* ── Scenario cards ──────────────────────────────────────────────── */
   .scenario-card {
-    background: var(--card); border: 1.5px solid var(--border);
-    border-radius: var(--r2); padding: 14px 16px; margin-bottom: 8px;
-    box-shadow: var(--sh1); transition: border-color .15s, box-shadow .15s; min-height: 90px;
+    background: var(--card); border: 1px solid var(--border);
+    padding: 1rem 1.25rem; margin-bottom: 8px;
+    transition: border-color .15s; min-height: 90px;
   }
-  .scenario-card.active {
-    border-color: var(--accent);
-    background: linear-gradient(135deg, #eff6ff 0%, #f8faff 100%);
-    box-shadow: 0 0 0 3px rgba(59,130,246,.12), var(--sh2);
+  .scenario-card.active { border-color: var(--blue2); background: rgba(46,116,232,0.07); }
+  .scenario-card:hover:not(.active) { border-color: var(--border2); }
+  .sc-header { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.4rem; }
+  .sc-icon {
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 0.5rem !important; letter-spacing: 0.08em !important;
+    color: var(--blue2) !important; flex-shrink: 0;
   }
-  .scenario-card:hover:not(.active) { border-color: #cbd5e1; box-shadow: var(--sh2); }
-  .sc-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
-  .sc-icon { font-size: 1.1rem; }
-  .sc-name { font-size: 0.84rem; font-weight: 700; color: var(--text); }
+  .sc-name {
+    font-family: 'Barlow Condensed', sans-serif !important;
+    font-size: 0.92rem !important; font-weight: 800 !important;
+    text-transform: uppercase !important; color: var(--white) !important;
+  }
   .sc-badge {
-    margin-left: auto; font-size: 0.58rem; font-weight: 700; color: var(--accent);
-    background: rgba(59,130,246,.12); border-radius: 10px;
-    padding: 3px 8px; text-transform: uppercase; letter-spacing: 0.08em;
+    margin-left: auto; font-family: 'JetBrains Mono', monospace;
+    font-size: 0.5rem; color: var(--blue2) !important;
+    background: rgba(46,116,232,0.15); padding: 0.15rem 0.5rem;
+    text-transform: uppercase; letter-spacing: 0.08em;
   }
-  .sc-desc { font-size: 0.70rem; color: var(--muted); line-height: 1.55; }
+  .sc-desc { font-size: 0.7rem !important; color: var(--muted) !important; line-height: 1.6 !important; }
 
-  /* ══ Advisor card ══════════════════════════════════════════════════ */
+  /* ── Advisor card ────────────────────────────────────────────────── */
   .advisor-card {
     background: var(--card); border: 1px solid var(--border);
-    border-left: 4px solid var(--navy); border-radius: var(--r2);
-    padding: 22px 26px; margin: 16px 0 22px 0;
-    line-height: 1.85; color: var(--text2); box-shadow: var(--sh2);
+    border-left: 2px solid var(--blue2);
+    padding: 1.5rem 2rem; margin: 1rem 0 1.5rem;
+    line-height: 1.85; color: var(--text2);
   }
-  .advisor-card strong { color: var(--text); font-weight: 600; }
+  .advisor-card strong { color: var(--white) !important; font-weight: 600; }
   .advisor-card h4 {
-    color: var(--text); margin: 0 0 12px 0; font-size: 0.92rem; font-weight: 700;
-    border-bottom: 1px solid var(--border); padding-bottom: 10px;
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 0.6rem !important; letter-spacing: 0.12em !important;
+    text-transform: uppercase !important; color: var(--blue2) !important;
+    font-weight: 500 !important; margin: 0 0 1rem !important;
+    padding-bottom: 0.75rem !important; border-bottom: 1px solid var(--border) !important;
   }
 
-  /* ══ Tabs ══════════════════════════════════════════════════════════ */
+  /* ── Tabs ────────────────────────────────────────────────────────── */
   .stTabs [data-baseweb="tab-list"] {
-    gap: 2px; background: #d8dfe9;
-    border-radius: var(--r1); padding: 4px; border: 1px solid #c8d0de;
+    gap: 0; background: var(--bg2) !important;
+    border-bottom: 1px solid var(--border) !important;
+    padding: 0 !important; border-radius: 0 !important;
   }
   .stTabs [data-baseweb="tab"] {
-    color: var(--muted) !important; font-weight: 500 !important;
-    border-radius: 4px !important; padding: 6px 18px !important; font-size: 0.84rem !important;
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 0.6rem !important; letter-spacing: 0.08em !important;
+    text-transform: uppercase !important; color: var(--muted) !important;
+    font-weight: 500 !important; border-radius: 0 !important;
+    padding: 0.75rem 1.5rem !important;
+    border-bottom: 2px solid transparent !important; background: transparent !important;
   }
   .stTabs [aria-selected="true"] {
-    background: var(--card) !important; color: var(--text) !important;
-    font-weight: 600 !important; box-shadow: var(--sh1) !important;
+    background: transparent !important; color: var(--white) !important;
+    border-bottom-color: var(--blue2) !important; box-shadow: none !important;
   }
 
-  /* ══ Buttons ═══════════════════════════════════════════════════════ */
+  /* ── Buttons ─────────────────────────────────────────────────────── */
   .stButton > button {
-    border-radius: var(--r1) !important; font-weight: 500 !important;
-    font-size: 0.82rem !important; background: var(--card) !important;
-    color: var(--text2) !important; border: 1px solid var(--border) !important;
-    box-shadow: var(--sh1) !important; transition: all .12s ease !important;
+    border-radius: 0 !important;
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 0.6rem !important; letter-spacing: 0.07em !important;
+    text-transform: uppercase !important; background: transparent !important;
+    color: var(--muted) !important; border: 1px solid var(--border) !important;
+    box-shadow: none !important; transition: all .12s !important;
   }
   .stButton > button[kind="primary"] {
-    background: var(--navy) !important; border-color: var(--navy) !important;
-    color: #ffffff !important; box-shadow: var(--sh2) !important;
+    background: var(--blue2) !important;
+    border-color: var(--blue2) !important; color: var(--white) !important;
   }
-  .stButton > button:hover { opacity: 0.84 !important; }
+  .stButton > button:hover { border-color: var(--border2) !important; color: var(--white) !important; }
 
-  /* ══ Expanders ═════════════════════════════════════════════════════ */
+  /* ── Expanders ───────────────────────────────────────────────────── */
   [data-testid="stExpander"] {
-    border: 1px solid var(--border) !important; border-radius: var(--r2) !important;
-    background: var(--card) !important; box-shadow: var(--sh1) !important;
+    border: 1px solid var(--border) !important; border-radius: 0 !important;
+    background: var(--card) !important; box-shadow: none !important;
+  }
+  [data-testid="stExpander"] summary {
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 0.6rem !important; letter-spacing: 0.07em !important;
+    text-transform: uppercase !important;
   }
 
-  /* ══ Metric tiles ══════════════════════════════════════════════════ */
+  /* ── Metric tiles ────────────────────────────────────────────────── */
   [data-testid="metric-container"] {
-    background: var(--card); border: 1px solid var(--border);
-    border-radius: var(--r2); padding: 16px 20px; box-shadow: var(--sh2);
+    background: var(--card) !important; border: 1px solid var(--border) !important;
+    border-radius: 0 !important; padding: 1.25rem 1.5rem !important; box-shadow: none !important;
+  }
+  [data-testid="metric-container"] label {
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 0.55rem !important; letter-spacing: 0.1em !important;
+    text-transform: uppercase !important;
+  }
+  [data-testid="metric-container"] [data-testid="stMetricValue"] {
+    font-family: 'Barlow Condensed', sans-serif !important;
+    font-size: 2rem !important; font-weight: 800 !important; color: var(--white) !important;
   }
 
-  /* ══ Dataframes ════════════════════════════════════════════════════ */
+  /* ── Multiselect tags ────────────────────────────────────────────── */
+  [data-baseweb="tag"] {
+    background: rgba(46,116,232,0.15) !important;
+    border: 1px solid rgba(46,116,232,0.3) !important; border-radius: 0 !important;
+  }
+  [data-baseweb="tag"] span:not([role="img"]) {
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 0.62rem !important; letter-spacing: 0.03em !important;
+    color: #93b8f5 !important; text-transform: uppercase !important;
+  }
+
+  /* ── Inputs / selects ────────────────────────────────────────────── */
+  [data-baseweb="select"] > div:first-child {
+    background: rgba(255,255,255,0.04) !important;
+    border: 1px solid var(--border) !important; border-radius: 0 !important;
+  }
+  [data-baseweb="input"] {
+    background: rgba(255,255,255,0.04) !important;
+    border: 1px solid var(--border) !important; border-radius: 0 !important;
+  }
+
+  /* ── Dataframes ──────────────────────────────────────────────────── */
   [data-testid="stDataFrame"] {
-    border-radius: var(--r2) !important; overflow: hidden;
-    border: 1px solid var(--border) !important; box-shadow: var(--sh1);
+    border-radius: 0 !important; overflow: hidden;
+    border: 1px solid var(--border) !important; box-shadow: none !important;
   }
 
-  /* ══ Misc ══════════════════════════════════════════════════════════ */
-  .custom-divider { border: none; border-top: 1px solid var(--border); margin: 28px 0; }
-  .stAlert { border-radius: var(--r2) !important; }
+  /* ── Main area labels & captions ────────────────────────────────── */
+  [data-testid="stCaptionContainer"],
+  [data-testid="stCaptionContainer"] p {
+    color: var(--muted) !important;
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 0.6rem !important;
+    letter-spacing: 0.05em !important;
+  }
+  [data-testid="stWidgetLabel"] p,
+  .stApp .stRadio > label,
+  .stApp .stCheckbox > label {
+    color: var(--text2) !important;
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 0.6rem !important;
+    letter-spacing: 0.07em !important;
+    text-transform: uppercase !important;
+  }
+  [data-testid="stMarkdownContainer"] p { color: var(--text) !important; }
+  [data-testid="stMarkdownContainer"] small { color: var(--muted) !important; }
+
+  /* ── Main area sliders ────────────────────────────────────────────── */
+  .stMain [data-baseweb="slider"] > div:first-child {
+    background: rgba(255,255,255,0.08) !important;
+    border-radius: 0 !important;
+  }
+  .stMain [data-baseweb="slider"] > div:first-child > div {
+    background: var(--blue2) !important;
+  }
+  .stMain [data-baseweb="slider"] [role="slider"] {
+    background: var(--white) !important;
+    border: 2px solid var(--blue2) !important;
+    border-radius: 0 !important;
+    box-shadow: 0 0 0 4px rgba(46,116,232,0.2) !important;
+  }
+
+  /* ── Misc ────────────────────────────────────────────────────────── */
+  .custom-divider { border: none; border-top: 1px solid var(--border); margin: 2rem 0; }
+  .stAlert { border-radius: 0 !important; border: 1px solid var(--border) !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -349,21 +466,26 @@ st.markdown("""
 
 _CHART_RC: dict = {
     "font.family":       "sans-serif",
-    "font.size":         10,
+    "font.size":         9,
     "axes.spines.top":   False,
     "axes.spines.right": False,
-    "axes.facecolor":    "#fafbfc",
-    "figure.facecolor":  "white",
+    "axes.facecolor":    "#0c1828",
+    "figure.facecolor":  "#0c1828",
+    "axes.edgecolor":    "#1c3a68",
     "axes.grid":         True,
-    "grid.alpha":        0.35,
-    "grid.color":        "#dde3ee",
-    "grid.linewidth":    0.7,
-    "axes.labelcolor":   "#4a5568",
-    "xtick.color":       "#718096",
-    "ytick.color":       "#718096",
-    "axes.labelsize":    9,
-    "xtick.labelsize":   9,
-    "ytick.labelsize":   9,
+    "grid.alpha":        0.1,
+    "grid.color":        "#ffffff",
+    "grid.linewidth":    0.5,
+    "axes.labelcolor":   "#4a6a8a",
+    "xtick.color":       "#2a4a6a",
+    "ytick.color":       "#2a4a6a",
+    "text.color":        "#6a8aaa",
+    "legend.facecolor":  "#0c1828",
+    "legend.edgecolor":  "#1c3a68",
+    "legend.labelcolor": "#8aaac8",
+    "axes.labelsize":    8,
+    "xtick.labelsize":   8,
+    "ytick.labelsize":   8,
 }
 
 # ---------------------------------------------------------------------------
@@ -517,25 +639,25 @@ PRESETS: dict[str, list[tuple[str, float]] | None] = {
 }
 
 _PRESET_META: dict[str, dict] = {
-    "My Portfolio":    {"icon": "💼", "desc": "Live holdings from holdings.json with cash position"},
-    "Conservative":    {"icon": "🛡️", "desc": "60% VOO · 30% SGOV · 10% QQQ — capital preservation"},
-    "Moderate Growth": {"icon": "📈", "desc": "60% VOO · 20% QQQ · 20% growth — balanced risk/return"},
-    "Aggressive AI":   {"icon": "🚀", "desc": "8-stock AI/semis basket — NVDA AVGO MRVL ALAB COHR ASML GOOG AMAT"},
-    "100% Index":      {"icon": "📊", "desc": "100% VOO — pure market-cap exposure, SPX beta ≈ 1"},
+    "My Portfolio":    {"icon": "LIVE", "desc": "Live holdings from holdings.json with cash position"},
+    "Conservative":    {"icon": "CONS", "desc": "60% VOO · 30% SGOV · 10% QQQ — capital preservation"},
+    "Moderate Growth": {"icon": "BALA", "desc": "60% VOO · 20% QQQ · 20% growth — balanced risk/return"},
+    "Aggressive AI":   {"icon": "AGGR", "desc": "8-stock AI/semis basket — NVDA AVGO MRVL ALAB COHR ASML GOOG AMAT"},
+    "100% Index":      {"icon": "INDX", "desc": "100% VOO — pure market-cap exposure, SPX beta ≈ 1"},
 }
 
 _SCENARIO_META: dict[str, dict] = {
-    "Base case":      {"icon": "📊", "label": "Base Case",      "desc": "Historical avg returns, normal vol, standard crash frequency"},
-    "AI boom":        {"icon": "🚀", "label": "AI Boom",        "desc": "AI factor μ +20%, vol compressed, lower crash probability"},
-    "Soft landing":   {"icon": "🌤️", "label": "Soft Landing",   "desc": "Fed threads needle — modest μ lift, vol ×0.75, crash risk halved"},
-    "Mild bear":      {"icon": "🐻", "label": "Mild Bear",      "desc": "μ −10%, vol ×1.2, mild fat tails — multi-quarter correction"},
-    "Risk-off":       {"icon": "🛡️", "label": "Risk-Off",       "desc": "Broad μ −20%, AI −25%, vol ×1.4, elevated crash frequency"},
-    "Rate shock":     {"icon": "📈", "label": "Rate Shock",     "desc": "2022 analog — AI beta compressed 35%, market beta spikes, t(6) tails"},
-    "Stagflation":    {"icon": "🔥", "label": "Stagflation",    "desc": "1970s analog — real returns negative, AI factor loses relevance"},
-    "Tech regulation":{"icon": "⚖️", "label": "Tech Reg",      "desc": "DOJ/EU antitrust — AI beta down 30%, vol ×1.3, t(8) tails"},
-    "AI winter":      {"icon": "❄️", "label": "AI Winter",      "desc": "Monetization disappoints — AI factor −55%, jumps (λ=2/yr), t(5) tails"},
-    "Flash crash":    {"icon": "💥", "label": "Flash Crash",    "desc": "Extreme tail — 2008/COVID analog; jumps (λ=4/yr), vol ×3, t(3) tails"},
-    "Custom":         {"icon": "⚙️", "label": "Custom",         "desc": "Set μ shift, AI boost, and vol multiplier manually"},
+    "Base case":      {"icon": "BASE", "label": "Base Case",      "desc": "Historical avg returns, normal vol, standard crash frequency"},
+    "AI boom":        {"icon": "BULL", "label": "AI Boom",        "desc": "AI factor μ +20%, vol compressed, lower crash probability"},
+    "Soft landing":   {"icon": "SOFT", "label": "Soft Landing",   "desc": "Fed threads needle — modest μ lift, vol ×0.75, crash risk halved"},
+    "Mild bear":      {"icon": "BEAR", "label": "Mild Bear",      "desc": "μ −10%, vol ×1.2, mild fat tails — multi-quarter correction"},
+    "Risk-off":       {"icon": "ROFF", "label": "Risk-Off",       "desc": "Broad μ −20%, AI −25%, vol ×1.4, elevated crash frequency"},
+    "Rate shock":     {"icon": "RATE", "label": "Rate Shock",     "desc": "2022 analog — AI beta compressed 35%, market beta spikes, t(6) tails"},
+    "Stagflation":    {"icon": "STAG", "label": "Stagflation",    "desc": "1970s analog — real returns negative, AI factor loses relevance"},
+    "Tech regulation":{"icon": "TREG", "label": "Tech Reg",       "desc": "DOJ/EU antitrust — AI beta down 30%, vol ×1.3, t(8) tails"},
+    "AI winter":      {"icon": "AIWN", "label": "AI Winter",      "desc": "Monetization disappoints — AI factor −55%, jumps (λ=2/yr), t(5) tails"},
+    "Flash crash":    {"icon": "TAIL", "label": "Flash Crash",    "desc": "Extreme tail — 2008/COVID analog; jumps (λ=4/yr), vol ×3, t(3) tails"},
+    "Custom":         {"icon": "CUST", "label": "Custom",         "desc": "Set μ shift, AI boost, and vol multiplier manually"},
 }
 
 # ---------------------------------------------------------------------------
@@ -1201,19 +1323,19 @@ def fan_chart(port, title=""):
     months = np.arange(port.shape[1])
     with plt.rc_context(_CHART_RC):
         fig, ax = plt.subplots(figsize=(8, 4.2))
-        ax.fill_between(months, bands[0], bands[4], alpha=0.12, color=NAVY, label="P10–P90")
-        ax.fill_between(months, bands[1], bands[3], alpha=0.25, color=NAVY, label="P25–P75")
-        ax.plot(months, bands[2], color=GOLD, lw=2.5, label="Median", zorder=5)
-        ax.plot(months, bands[0], color=NAVY, lw=0.9, alpha=0.45, linestyle="--")
-        ax.plot(months, bands[4], color=NAVY, lw=0.9, alpha=0.45, linestyle="--")
+        ax.fill_between(months, bands[0], bands[4], alpha=0.07, color="#2e74e8", label="P10–P90")
+        ax.fill_between(months, bands[1], bands[3], alpha=0.18, color="#2e74e8", label="P25–P75")
+        ax.plot(months, bands[2], color="#2e74e8", lw=2.5, label="Median", zorder=5)
+        ax.plot(months, bands[0], color="#ffffff", lw=0.7, alpha=0.2, linestyle="--")
+        ax.plot(months, bands[4], color="#ffffff", lw=0.7, alpha=0.2, linestyle="--")
         ax.set_xlabel("Month")
         ax.set_ylabel("Portfolio value")
         if title:
-            ax.set_title(title, fontsize=10, fontweight="bold", color=NAVY, pad=10)
-        ax.legend(loc="upper left", fontsize=8, framealpha=0.9)
+            ax.set_title(title, fontsize=9, fontweight="bold", color="#8aaac8", pad=10)
+        ax.legend(loc="upper left", fontsize=7, framealpha=0.8)
         ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f"${x:,.0f}"))
-        ax.spines["left"].set_color("#dde3ee")
-        ax.spines["bottom"].set_color("#dde3ee")
+        ax.spines["left"].set_color("#1c3a68")
+        ax.spines["bottom"].set_color("#1c3a68")
         plt.tight_layout()
     return fig
 
@@ -1223,21 +1345,21 @@ def hist_chart(port, title="", capital: float | None = None):
     p10, p50, p90 = np.percentile(end, [10, 50, 90])
     with plt.rc_context(_CHART_RC):
         fig, ax = plt.subplots(figsize=(8, 4.2))
-        ax.hist(end, bins=80, color=NAVY, alpha=0.70, edgecolor="white", linewidth=0.3)
+        ax.hist(end, bins=80, color="#2e74e8", alpha=0.5, edgecolor="#0c1828", linewidth=0.3)
         if capital is not None:
-            ax.axvline(capital, color="#718096", lw=1.2, linestyle=":",
+            ax.axvline(capital, color="#4a6a8a", lw=1.2, linestyle=":",
                        label=f"Capital  ${capital:,.0f}", zorder=4)
-        ax.axvline(p10, color=RED,       lw=2,   label=f"P10  ${p10:,.0f}", zorder=5)
-        ax.axvline(p50, color=GOLD,      lw=2.5, label=f"P50  ${p50:,.0f}", zorder=5)
-        ax.axvline(p90, color="#27ae60", lw=2,   label=f"P90  ${p90:,.0f}", zorder=5)
+        ax.axvline(p10, color="#e05a5a", lw=2,   label=f"P10  ${p10:,.0f}", zorder=5)
+        ax.axvline(p50, color="#2e74e8", lw=2.5, label=f"P50  ${p50:,.0f}", zorder=5)
+        ax.axvline(p90, color="#3ec97a", lw=2,   label=f"P90  ${p90:,.0f}", zorder=5)
         ax.set_xlabel("Terminal value")
         ax.set_ylabel("Paths")
         if title:
-            ax.set_title(title, fontsize=10, fontweight="bold", color=NAVY, pad=10)
-        ax.legend(fontsize=8, framealpha=0.9)
+            ax.set_title(title, fontsize=9, fontweight="bold", color="#8aaac8", pad=10)
+        ax.legend(fontsize=7, framealpha=0.8)
         ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f"${x:,.0f}"))
-        ax.spines["left"].set_color("#dde3ee")
-        ax.spines["bottom"].set_color("#dde3ee")
+        ax.spines["left"].set_color("#1c3a68")
+        ax.spines["bottom"].set_color("#1c3a68")
         plt.tight_layout()
     return fig
 
@@ -1260,22 +1382,22 @@ def allocation_donut(enriched: pd.DataFrame) -> plt.Figure | None:
     labels  = d["ticker"].values
 
     palette = [
-        "#1e3a5f", "#2d5282", "#4a7fb5", "#6499cc", "#8ab4d9",
-        "#b8860b", "#d4a017", "#f0c040", "#f5d060", "#fae090",
+        "#2e74e8", "#1a5fd4", "#1248a8", "#4a90d4", "#7ab0e8",
+        "#3ec97a", "#0e9f58", "#f0a040", "#e05a5a", "#5a7a9a",
     ]
     colors = palette[:len(weights)]
 
     with plt.rc_context(_CHART_RC):
         fig, ax = plt.subplots(figsize=(4.8, 4.0))
-        fig.patch.set_facecolor("white")
+        fig.patch.set_facecolor("#0c1828")
         wedges, _ = ax.pie(
             weights, labels=None, colors=colors, startangle=90,
-            wedgeprops=dict(width=0.54, edgecolor="white", linewidth=2.5),
+            wedgeprops=dict(width=0.54, edgecolor="#0c1828", linewidth=2.5),
         )
         legend_labels = [f"{t}  {w*100:.1f}%" for t, w in zip(labels, weights)]
         ax.legend(wedges, legend_labels, loc="center left", bbox_to_anchor=(0.92, 0.5),
-                  fontsize=8, frameon=False)
-        ax.set_title("Allocation", fontsize=10, fontweight="bold", color=NAVY, pad=8)
+                  fontsize=7, frameon=False)
+        ax.set_title("Allocation", fontsize=9, fontweight="bold", color="#8aaac8", pad=8)
         plt.tight_layout()
     return fig
 
@@ -1287,10 +1409,10 @@ def factor_exposure_bar(enriched: pd.DataFrame) -> plt.Figure | None:
 
     d["f_idio"] = (1 - d["f_market"] - d["f_ai"] - d["f_power"]).clip(0, 1)
     factor_map = {
-        "Market":        ("f_market", "#2d5282"),
-        "AI / Tech":     ("f_ai",     "#b8860b"),
-        "Power":         ("f_power",  "#27ae60"),
-        "Idiosyncratic": ("f_idio",   "#94a3b8"),
+        "Market":        ("f_market", "#2e74e8"),
+        "AI / Tech":     ("f_ai",     "#3ec97a"),
+        "Power":         ("f_power",  "#f0a040"),
+        "Idiosyncratic": ("f_idio",   "#4a6a8a"),
     }
 
     labels, vals, colors = [], [], []
@@ -1309,12 +1431,12 @@ def factor_exposure_bar(enriched: pd.DataFrame) -> plt.Figure | None:
         bars = ax.barh(labels, vals, color=colors, height=0.48, edgecolor="none")
         for bar, v in zip(bars, vals):
             ax.text(v + 0.005, bar.get_y() + bar.get_height() / 2,
-                    f"{v*100:.0f}%", va="center", fontsize=9, color="#4a5568", fontweight="600")
+                    f"{v*100:.0f}%", va="center", fontsize=8, color="#8aaac8", fontweight="600")
         ax.set_xlim(0, max(vals) * 1.28 if vals else 1)
         ax.set_xlabel("Weighted exposure")
-        ax.set_title("Factor exposure", fontsize=10, fontweight="bold", color=NAVY, pad=8)
-        ax.spines["left"].set_color("#dde3ee")
-        ax.spines["bottom"].set_color("#dde3ee")
+        ax.set_title("Factor exposure", fontsize=9, fontweight="bold", color="#8aaac8", pad=8)
+        ax.spines["left"].set_color("#1c3a68")
+        ax.spines["bottom"].set_color("#1c3a68")
         plt.tight_layout()
     return fig
 
@@ -1502,15 +1624,15 @@ def historical_chart(port_series: pd.Series, spx_series: pd.Series, title: str =
     s_norm = s.loc[common] / s.loc[common].iloc[0] * 100
     with plt.rc_context(_CHART_RC):
         fig, ax = plt.subplots(figsize=(9, 4.2))
-        ax.plot(p_norm.index, p_norm.values, color=NAVY, lw=2.2, label="Portfolio")
-        ax.plot(s_norm.index, s_norm.values, color="#94a3b8", lw=1.5,
+        ax.plot(p_norm.index, p_norm.values, color=GOLD, lw=2.2, label="Portfolio")
+        ax.plot(s_norm.index, s_norm.values, color="#4a6a8a", lw=1.5,
                 linestyle="--", label="SPY")
         ax.set_ylabel("Indexed (start = 100)")
         if title:
-            ax.set_title(title, fontsize=10, fontweight="bold", color=NAVY, pad=10)
+            ax.set_title(title, fontsize=10, fontweight="bold", color="#8aaac8", pad=10)
         ax.legend(fontsize=8, framealpha=0.9)
-        ax.spines["left"].set_color("#dde3ee")
-        ax.spines["bottom"].set_color("#dde3ee")
+        ax.spines["left"].set_color("#1c3a68")
+        ax.spines["bottom"].set_color("#1c3a68")
         plt.tight_layout()
     return fig
 
@@ -1524,9 +1646,9 @@ def rolling_vol_chart(port_series: pd.Series, window: int = 90) -> plt.Figure:
         ax.fill_between(rolling_vol.index, 0, rolling_vol.values, alpha=0.15, color=GOLD)
         ax.set_ylabel("Annualized vol (%)")
         ax.set_title(f"Rolling {window}-day volatility", fontsize=10,
-                     fontweight="bold", color=NAVY, pad=8)
-        ax.spines["left"].set_color("#dde3ee")
-        ax.spines["bottom"].set_color("#dde3ee")
+                     fontweight="bold", color="#8aaac8", pad=8)
+        ax.spines["left"].set_color("#1c3a68")
+        ax.spines["bottom"].set_color("#1c3a68")
         plt.tight_layout()
     return fig
 
@@ -1572,7 +1694,7 @@ def advisor_summary_html(name: str, stats: dict, horizon_y: int,
     years_from_now = datetime.now().year + horizon_y
     return f"""
 <div class="advisor-card">
-  <h4>📊 {horizon_y}-Year Outlook — {name} &nbsp;·&nbsp; {regime_name}</h4>
+  <h4>{horizon_y}-Year Outlook — {name} &nbsp;·&nbsp; {regime_name}</h4>
   Starting from <strong>${starting_mv:,.0f}</strong>, your portfolio's most likely outcome is
   <strong>${stats['median']:,.0f}</strong> (median) by {years_from_now}.<br>
   In a great scenario (top 10%), you could reach <strong>${stats['p90']:,.0f}</strong>.<br>
@@ -2016,7 +2138,7 @@ for tab, name in zip(tabs, book_names):
                 )
                 more = f" +{len(hist_overridden)-6} more" if len(hist_overridden) > 6 else ""
                 st.info(
-                    f"📊 **Historical risk model active** ({hist_period}): "
+                    f"**Historical risk model active** ({hist_period}): "
                     f"{len(hist_overridden)}/{len(hist_overridden)+len(hist_fallbacks)} "
                     f"tickers overridden with regression-derived σ and factor loadings.\n\n"
                     f"_{detail}{more}_"
@@ -2043,7 +2165,7 @@ for tab, name in zip(tabs, book_names):
                         "n_obs":     e["n_obs"],
                     })
                 with st.expander(
-                    f"📈 Effective risk model (defaults vs historical) — {len(hist_overridden)} tickers",
+                    f"Effective risk model (defaults vs historical) — {len(hist_overridden)} tickers",
                     expanded=False
                 ):
                     st.caption(
@@ -2059,7 +2181,7 @@ for tab, name in zip(tabs, book_names):
                     for t in hist_fallbacks
                 )
                 st.warning(
-                    f"⚠️ Insufficient history — using hand-set defaults for: {fb_reasons}"
+                    f"Insufficient history — using hand-set defaults for: {fb_reasons}"
                 )
 
         holdings_dfs[name] = enriched
@@ -2068,7 +2190,7 @@ for tab, name in zip(tabs, book_names):
         missing_tickers = detect_price_failures(enriched)
         if missing_tickers:
             price_warn.warning(
-                f"⚠️ No price found for: **{', '.join(missing_tickers)}** — "
+                f"No price found for: **{', '.join(missing_tickers)}** — "
                 "check for delisting or typo. These positions are excluded from MV and sim."
             )
 
@@ -2169,10 +2291,10 @@ for tab, name in zip(tabs, book_names):
                     except Exception:
                         return ""
                     if p >= 0.50:
-                        return "background-color: #16a34a22; color: #15803d; font-weight:600"
+                        return "background-color: rgba(62,201,122,0.12); color: #3ec97a; font-weight:600"
                     if p >= 0.25:
-                        return "background-color: #ca8a0422; color: #b45309"
-                    return "background-color: #dc262622; color: #dc2626"
+                        return "background-color: rgba(240,160,64,0.12); color: #f0a040"
+                    return "background-color: rgba(224,90,90,0.12); color: #e05a5a"
 
                 st.dataframe(
                     ladder_df.style.applymap(_ladder_color),
@@ -2335,7 +2457,7 @@ with whatif_tab:
         col_total, col_norm = st.columns([3, 1])
         with col_total:
             ok = abs(total - 1.0) < 0.005
-            color = "#27ae60" if ok else "#c0392b"
+            color = "#3ec97a" if ok else "#e05a5a"
             tail = " ✓" if ok else " — click Normalize to rescale to 100%"
             st.markdown(
                 f"<div style='font-size:1rem; padding:6px 0;'>"
@@ -2344,7 +2466,7 @@ with whatif_tab:
                 unsafe_allow_html=True,
             )
         with col_norm:
-            if st.button("⚖ Normalize to 100%", use_container_width=True,
+            if st.button("Normalize to 100%", use_container_width=True,
                          key="whatif_normalize", disabled=(total <= 0)):
                 st.session_state["whatif_normalize_pending"] = True
                 st.rerun()
@@ -2403,13 +2525,13 @@ with whatif_tab:
         _section_label("Composition  ·  current → what-if")
         cc1, cc2 = st.columns(2)
         with cc1:
-            st.markdown("<div style='text-align:center; font-weight:600; color:#374151;'>Current</div>",
+            st.markdown("<div style='text-align:center; font-weight:600; color:rgba(255,255,255,0.85);'>Current</div>",
                         unsafe_allow_html=True)
             fig = allocation_donut(src_df)
             if fig:
                 st.pyplot(fig); plt.close(fig)
         with cc2:
-            st.markdown("<div style='text-align:center; font-weight:600; color:#374151;'>What-if</div>",
+            st.markdown("<div style='text-align:center; font-weight:600; color:rgba(255,255,255,0.85);'>What-if</div>",
                         unsafe_allow_html=True)
             fig = allocation_donut(wf_df)
             if fig:
@@ -2421,7 +2543,7 @@ with whatif_tab:
         col_run, col_apply_b, col_apply_c = st.columns([2, 1, 1])
         with col_run:
             run_mc = st.button(
-                "⚡ Run Monte Carlo on what-if",
+                "Run Monte Carlo — What-if",
                 use_container_width=True, type="primary", key="whatif_run_mc",
             )
         def _commit_whatif_to_book(dest: str):
@@ -2651,7 +2773,7 @@ with factor_tab:
                 sns.heatmap(corr, ax=ax, annot=True, fmt=".2f", center=0,
                             cmap="RdBu_r", linewidths=0.4, square=True, vmin=0, vmax=1)
                 ax.set_title(f"Implied pairwise correlations — {sel}", fontsize=11,
-                             fontweight="bold", color=NAVY, pad=10)
+                             fontweight="bold", color="#8aaac8", pad=10)
                 plt.tight_layout()
             st.pyplot(fig)
             plt.close(fig)

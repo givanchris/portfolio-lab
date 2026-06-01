@@ -5,7 +5,7 @@ Run with:
     streamlit run portfolio_lab.py
 
 Features:
-  - Preset portfolios (My Portfolio, Conservative, Moderate Growth, Aggressive AI, 100% Index)
+  - Preset portfolios (Sample Portfolio, Conservative, Moderate Growth, Aggressive AI, 100% Index)
   - Easy ticker management via multiselect + simple shares editor
   - Scenario buttons (Base / AI Boom / Risk-Off / Mild Bear / Custom)
   - Advisor plain-English summary card
@@ -28,6 +28,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import scipy.stats
+from scipy.optimize import minimize
 import streamlit as st
 import yfinance as yf
 import matplotlib.pyplot as plt
@@ -39,7 +40,7 @@ from build_pdf_report import build_report as _build_pdf_report
 # ---------------------------------------------------------------------------
 
 HERE               = Path(__file__).parent
-HOLDINGS_FP        = HERE / os.environ.get("HOLDINGS_FILE", "holdings.json")
+HOLDINGS_FP        = HERE / os.environ.get("HOLDINGS_FILE", "holdings_demo.json")
 SCENARIOS_FP       = HERE / "lab_scenarios.json"
 PRICE_CACHE_FP     = HERE / "price_cache.json"
 CACHE_MAX_AGE_DAYS = 1
@@ -66,6 +67,8 @@ st.markdown("""
     --border:  rgba(255,255,255,0.08);
     --border2: rgba(255,255,255,0.18);
     --blue2:   #2e74e8;
+    --teal:    #00e0a4;
+    --teal-dim:rgba(0,224,164,0.14);
     --white:   #ffffff;
     --text:    rgba(255,255,255,0.9);
     --text2:   rgba(255,255,255,0.65);
@@ -204,6 +207,10 @@ st.markdown("""
     color: var(--green); border-color: rgba(62,201,122,0.25);
     background: rgba(62,201,122,0.07);
   }
+  .hero-pill.demo {
+    color: var(--amber); border-color: rgba(240,160,64,0.25);
+    background: rgba(240,160,64,0.07);
+  }
   .hero-right {
     display: flex; gap: 1px; background: var(--border);
     border: 1px solid var(--border);
@@ -243,16 +250,25 @@ st.markdown("""
     display: flex; gap: 1px; background: var(--border);
     border: 1px solid var(--border); margin: 1.25rem 0;
   }
-  .kpi { flex: 1; min-width: 0; background: var(--bg2); padding: 1.25rem 1.5rem; }
+  .kpi {
+    flex: 1; min-width: 0; background: var(--bg2);
+    padding: 1.2rem 1.5rem 1.25rem;
+    border-top: 2px solid transparent;
+    transition: border-color .15s;
+  }
+  .kpi:hover { border-top-color: var(--teal); }
   .kpi .kval {
-    font-family: 'Barlow Condensed', sans-serif !important;
-    font-size: 2rem !important; font-weight: 800 !important;
-    color: var(--white) !important; line-height: 1 !important;
-    text-transform: uppercase !important;
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 1.6rem !important; font-weight: 500 !important;
+    color: var(--teal) !important; line-height: 1.05 !important;
+    letter-spacing: -0.02em !important;
+    font-variant-numeric: tabular-nums !important;
   }
   .kpi.green .kval { color: var(--green) !important; }
   .kpi.red   .kval { color: var(--red) !important; }
   .kpi.gold  .kval { color: var(--amber) !important; }
+  .kpi.blue  .kval { color: var(--teal) !important; }
+  .kpi.muted .kval { color: var(--white) !important; }
   .kpi .klbl {
     font-family: 'JetBrains Mono', monospace !important;
     font-size: 0.55rem !important; letter-spacing: 0.12em !important;
@@ -488,6 +504,16 @@ _CHART_RC: dict = {
     "ytick.labelsize":   8,
 }
 
+# Shared chart palette — keep figures consistent with the UI accent system.
+C_TEAL   = "#00e0a4"   # signature data accent (values, optimal points)
+C_BLUE   = "#2e74e8"   # structure / median lines
+C_GREEN  = "#3ec97a"   # positive / upside
+C_RED    = "#e05a5a"   # negative / downside
+C_AMBER  = "#f0a040"   # caution / current-position marker
+C_PANEL  = "#0c1828"   # panel background
+C_GRID   = "#1c3a68"   # spines / faint structure
+C_TITLE  = "#8aaac8"   # chart titles
+
 # ---------------------------------------------------------------------------
 # UI helpers
 # ---------------------------------------------------------------------------
@@ -545,6 +571,12 @@ DEFAULT_RISK_MODEL = {
     "QQQ":  (0.10, 0.22, 0.65, 0.30, 0.00),
     "SGOV": (0.045, 0.01, 0.01, 0.00, 0.00),
     "BIL":  (0.045, 0.01, 0.01, 0.00, 0.00),
+    # ── Portfolio positions added to known-ticker list ───────────────────────
+    "HUBB":  (0.09, 0.28, 0.50, 0.05, 0.20),  # electrical grid infra / industrial
+    "TCEHY": (0.07, 0.45, 0.30, 0.15, 0.00),  # Tencent ADR; China discount + high idio
+    "MOG-A": (0.08, 0.28, 0.40, 0.05, 0.00),  # Moog aerospace & defense actuation
+    "MIR":   (0.08, 0.55, 0.30, 0.00, 0.25),  # Mirion nuclear/radiation; small-cap
+    "XRP":   (0.10, 0.90, 0.20, 0.00, 0.00),  # XRP crypto; tail-bet sizing
 }
 
 GENERIC = (0.08, 0.40, 0.20, 0.20, 0.00)
@@ -630,7 +662,7 @@ STRESS_SYS_BOOST = 1.50
 # Preset definitions: list of (ticker, target_dollars)
 # Shares are computed from live prices at load time; total notional = $10,000
 PRESETS: dict[str, list[tuple[str, float]] | None] = {
-    "My Portfolio":    None,   # loaded from holdings.json
+    "Sample Portfolio": None,  # loaded from HOLDINGS_FILE (demo by default)
     "Conservative":    [("VOO", 5000), ("SGOV", 3000), ("QQQ", 2000)],
     "Moderate Growth": [("VOO", 6000), ("QQQ", 2000), ("META", 1000), ("NVDA", 1000)],
     "Aggressive AI":   [("NVDA", 1250), ("AVGO", 1250), ("MRVL", 1250), ("ALAB", 1250),
@@ -639,7 +671,7 @@ PRESETS: dict[str, list[tuple[str, float]] | None] = {
 }
 
 _PRESET_META: dict[str, dict] = {
-    "My Portfolio":    {"icon": "LIVE", "desc": "Live holdings from holdings.json with cash position"},
+    "Sample Portfolio": {"icon": "DEMO", "desc": "Illustrative AI/semis book loaded from the holdings file, with cash position"},
     "Conservative":    {"icon": "CONS", "desc": "60% VOO · 30% SGOV · 10% QQQ — capital preservation"},
     "Moderate Growth": {"icon": "BALA", "desc": "60% VOO · 20% QQQ · 20% growth — balanced risk/return"},
     "Aggressive AI":   {"icon": "AGGR", "desc": "8-stock AI/semis basket — NVDA AVGO MRVL ALAB COHR ASML GOOG AMAT"},
@@ -948,6 +980,161 @@ def factor_exposure(df: pd.DataFrame,
     fp = float(np.sum(w * df["f_power"].fillna(0.0).astype(float).to_numpy()))
     fi = max(0.0, 1.0 - fm - fa - fp)
     return {"f_market": fm, "f_ai": fa, "f_power": fp, "f_idio": fi}
+
+
+# ---------------------------------------------------------------------------
+# Mean-variance optimization (efficient frontier)
+#
+# Covariance is built from the same 3-factor risk model the simulator uses:
+#     Σ = B · diag(σ_f²) · Bᵀ + diag(idiosyncratic)
+# The historical risk model orthogonalizes the SPY / SMH / URA proxies
+# (Gram-Schmidt), so the factors are treated as uncorrelated and the factor
+# covariance is diagonal. This makes Σ positive semidefinite by construction
+# and ties portfolio risk back to systematic (market / AI / power) drivers
+# rather than a noisy raw sample covariance.
+# ---------------------------------------------------------------------------
+
+# Annualized systematic factor vols: market (SPY), AI (SMH), power (URA).
+_FACTOR_VOLS = np.array([SPX_SIGMA, SMH_SIGMA, URA_SIGMA])  # market, ai, power
+# Tiny positivity guard: only bites when factor loadings explain more variance
+# than the asset's stated total vol. Low-vol assets (e.g. CASH) keep their true
+# near-zero idiosyncratic risk.
+_IDIO_VAR_FLOOR = 1e-6
+
+
+def build_cov_matrix(tickers: tuple[str, ...], mu_t: tuple[float, ...],
+                     sig_t: tuple[float, ...],
+                     loadings_t: tuple[tuple[float, float, float], ...]
+                     ) -> tuple[np.ndarray, np.ndarray]:
+    """Factor-structured annual covariance Σ and expected-return vector μ."""
+    mu  = np.asarray(mu_t, dtype=float)
+    sig = np.asarray(sig_t, dtype=float)
+    B   = np.asarray(loadings_t, dtype=float).reshape(len(tickers), 3)
+    fac_var    = _FACTOR_VOLS ** 2                       # (3,)
+    systematic = B @ np.diag(fac_var) @ B.T              # (n, n)
+    explained  = np.einsum("ij,j,ij->i", B, fac_var, B)  # diag of systematic
+    idio       = np.maximum(sig ** 2 - explained, _IDIO_VAR_FLOOR)
+    cov        = systematic + np.diag(idio)
+    return mu, cov
+
+
+def _port_stats(w: np.ndarray, mu: np.ndarray, cov: np.ndarray,
+                rf: float) -> tuple[float, float, float]:
+    ret = float(w @ mu)
+    vol = float(np.sqrt(max(w @ cov @ w, 1e-18)))
+    sharpe = (ret - rf) / vol if vol > 1e-12 else 0.0
+    return ret, vol, sharpe
+
+
+def _solve(mu: np.ndarray, cov: np.ndarray, rf: float, cap: float,
+           objective: str, target: float | None = None) -> np.ndarray:
+    """SLSQP solve, long-only, weights sum to 1, per-name cap. Falls back to
+    equal-weight if the optimizer fails to converge."""
+    n = len(mu)
+    cap = max(cap, 1.0 / n + 1e-9)          # keep the simplex feasible
+    x0 = np.full(n, 1.0 / n)
+    bounds = [(0.0, cap)] * n
+    cons = [{"type": "eq", "fun": lambda w: w.sum() - 1.0}]
+    if objective == "sharpe":
+        def fun(w):
+            v = np.sqrt(max(w @ cov @ w, 1e-18))
+            return -(w @ mu - rf) / v
+    elif objective == "target":
+        cons.append({"type": "eq", "fun": lambda w, t=target: float(w @ mu - t)})
+        fun = lambda w: float(w @ cov @ w)
+    else:  # minvar
+        fun = lambda w: float(w @ cov @ w)
+    res = minimize(fun, x0, method="SLSQP", bounds=bounds, constraints=cons,
+                   options={"maxiter": 500, "ftol": 1e-10})
+    w = res.x if res.success else x0
+    w = np.clip(w, 0.0, None)
+    s = w.sum()
+    return w / s if s > 0 else x0
+
+
+@st.cache_data(show_spinner=False)
+def compute_frontier(tickers: tuple[str, ...], mu_t: tuple[float, ...],
+                     sig_t: tuple[float, ...],
+                     loadings_t: tuple[tuple[float, float, float], ...],
+                     cur_w_t: tuple[float, ...],
+                     rf: float, cap: float, n_random: int = 6000,
+                     n_curve: int = 45, seed: int = 7) -> dict:
+    """Everything the Optimizer tab needs, cached on a hashable signature.
+    Returns random cloud, analytical frontier, and the three key portfolios."""
+    mu, cov = build_cov_matrix(tickers, mu_t, sig_t, loadings_t)
+    n = len(mu)
+
+    # Random long-only cloud (Dirichlet → naturally sums to 1).
+    rng = np.random.default_rng(seed)
+    W = rng.dirichlet(np.ones(n), size=n_random)
+    cloud_ret = W @ mu
+    cloud_vol = np.sqrt(np.einsum("ij,jk,ik->i", W, cov, W))
+    cloud_shp = np.where(cloud_vol > 1e-12, (cloud_ret - rf) / cloud_vol, 0.0)
+
+    # Analytical efficient frontier (min variance per target return).
+    cap_eff = max(cap, 1.0 / n + 1e-9)
+    f_lo, f_hi = float(mu.min()), float(mu.max())
+    fr_vol, fr_ret = [], []
+    for t in np.linspace(f_lo, f_hi, n_curve):
+        w = _solve(mu, cov, rf, cap_eff, "target", target=t)
+        r, v, _ = _port_stats(w, mu, cov, rf)
+        fr_vol.append(v); fr_ret.append(r)
+
+    # Key portfolios.
+    w_sharpe = _solve(mu, cov, rf, cap_eff, "sharpe")
+    w_minvar = _solve(mu, cov, rf, cap_eff, "minvar")
+    cur_w = np.asarray(cur_w_t, dtype=float)
+    cur_w = cur_w / cur_w.sum() if cur_w.sum() > 0 else np.full(n, 1.0 / n)
+
+    def pack(w):
+        r, v, s = _port_stats(w, mu, cov, rf)
+        return {"w": w.tolist(), "ret": r, "vol": v, "sharpe": s}
+
+    return {
+        "tickers":  list(tickers),
+        "cloud":    {"vol": cloud_vol.tolist(), "ret": cloud_ret.tolist(),
+                     "sharpe": cloud_shp.tolist()},
+        "frontier": {"vol": fr_vol, "ret": fr_ret},
+        "current":  pack(cur_w),
+        "max_sharpe": pack(w_sharpe),
+        "min_var":    pack(w_minvar),
+        "rf": rf, "cap": cap_eff,
+    }
+
+
+def frontier_chart(payload: dict) -> plt.Figure:
+    cloud = payload["cloud"]
+    fr    = payload["frontier"]
+    with plt.rc_context(_CHART_RC):
+        fig, ax = plt.subplots(figsize=(8.4, 5.0))
+        sc = ax.scatter(np.array(cloud["vol"]) * 100, np.array(cloud["ret"]) * 100,
+                        c=cloud["sharpe"], cmap="viridis", s=6, alpha=0.35,
+                        linewidths=0, zorder=1)
+        cbar = fig.colorbar(sc, ax=ax, pad=0.01)
+        cbar.set_label("Sharpe", color=C_TITLE, fontsize=8)
+        cbar.ax.tick_params(colors="#2a4a6a", labelsize=7)
+        cbar.outline.set_edgecolor(C_GRID)
+        ax.plot(np.array(fr["vol"]) * 100, np.array(fr["ret"]) * 100,
+                color=C_TITLE, lw=1.6, ls="--", alpha=0.8, zorder=3,
+                label="Efficient frontier")
+        for key, color, marker, lbl in [
+            ("max_sharpe", C_TEAL,  "*", "Max Sharpe"),
+            ("min_var",    C_BLUE,  "D", "Min variance"),
+            ("current",    C_AMBER, "o", "Current"),
+        ]:
+            p = payload[key]
+            ax.scatter(p["vol"] * 100, p["ret"] * 100, color=color,
+                       marker=marker, s=190 if marker == "*" else 90,
+                       edgecolor="#07101e", linewidth=1.0, zorder=6, label=lbl)
+        ax.set_xlabel("Annualized volatility  (%)")
+        ax.set_ylabel("Expected return  (%)")
+        ax.set_title("Efficient frontier — factor-model covariance", fontsize=9,
+                     fontweight="bold", color=C_TITLE, pad=10)
+        ax.legend(loc="lower right", fontsize=7.5, framealpha=0.85)
+        ax.spines["left"].set_color(C_GRID)
+        ax.spines["bottom"].set_color(C_GRID)
+        plt.tight_layout()
+    return fig
 
 
 # ---------------------------------------------------------------------------
@@ -1323,9 +1510,9 @@ def fan_chart(port, title=""):
     months = np.arange(port.shape[1])
     with plt.rc_context(_CHART_RC):
         fig, ax = plt.subplots(figsize=(8, 4.2))
-        ax.fill_between(months, bands[0], bands[4], alpha=0.07, color="#2e74e8", label="P10–P90")
-        ax.fill_between(months, bands[1], bands[3], alpha=0.18, color="#2e74e8", label="P25–P75")
-        ax.plot(months, bands[2], color="#2e74e8", lw=2.5, label="Median", zorder=5)
+        ax.fill_between(months, bands[0], bands[4], alpha=0.07, color=C_BLUE, label="P10–P90")
+        ax.fill_between(months, bands[1], bands[3], alpha=0.18, color=C_BLUE, label="P25–P75")
+        ax.plot(months, bands[2], color=C_TEAL, lw=2.5, label="Median", zorder=5)
         ax.plot(months, bands[0], color="#ffffff", lw=0.7, alpha=0.2, linestyle="--")
         ax.plot(months, bands[4], color="#ffffff", lw=0.7, alpha=0.2, linestyle="--")
         ax.set_xlabel("Month")
@@ -1810,7 +1997,7 @@ if "regime_name" not in st.session_state:
     st.session_state.regime_name = "Base case"
 
 if "active_preset" not in st.session_state:
-    st.session_state.active_preset = "My Portfolio"
+    st.session_state.active_preset = "Sample Portfolio"
 
 # ---------------------------------------------------------------------------
 # Page header
@@ -1847,14 +2034,18 @@ _n_hold_str = str(_n_hold) if _n_hold else "—"
 st.markdown(f"""
 <div class="hero">
   <div class="hero-left">
-    <div class="hero-eyebrow">Portfolio Analytics Platform</div>
+    <div class="hero-eyebrow">Quant Portfolio Analytics</div>
     <h1>Portfolio Lab</h1>
-    <p class="hero-sub">Factor-model Monte Carlo simulator with 2-state Markov regime-switching
-    correlations, live prices, and multi-benchmark analytics against SPY, SMH, and URA.</p>
+    <p class="hero-sub">Factor-model Monte Carlo engine with Heston stochastic volatility,
+    Merton jump-diffusion, fat-tailed shocks, and Markov regime switching — plus mean-variance
+    optimization and multi-benchmark analytics against SPY, SMH, and URA.</p>
     <div class="hero-pills">
-      <span class="hero-pill">3-Factor GBM</span>
-      <span class="hero-pill">Regime Switching</span>
+      <span class="hero-pill">Heston SV</span>
+      <span class="hero-pill">Merton Jumps</span>
+      <span class="hero-pill">Fat Tails</span>
+      <span class="hero-pill">Mean-Variance</span>
       <span class="hero-pill">SPY · SMH · URA</span>
+      <span class="hero-pill demo">Sample data</span>
       <span class="hero-pill live">Prices {_latest_price_ts()}</span>
     </div>
   </div>
@@ -1877,7 +2068,100 @@ st.markdown(f"""
 
 price_warn = st.empty()
 
-KNOWN_TICKERS = sorted(DEFAULT_RISK_MODEL.keys())
+# ---------------------------------------------------------------------------
+# Broad ticker universe — powers multiselect search coverage.
+# Symbols here that are absent from DEFAULT_RISK_MODEL fall back to GENERIC.
+# ---------------------------------------------------------------------------
+_TICKER_UNIVERSE: set = {
+    # ── Mega-cap tech ────────────────────────────────────────────────────────
+    "TSLA", "AMD", "INTC", "QCOM", "TXN", "MU", "NFLX", "DIS", "ORCL",
+    "CRM", "NOW", "ADBE", "INTU", "PANW", "FTNT", "CRWD", "ZS", "OKTA",
+    "SNOW", "PLTR", "DDOG", "NET", "CFLT", "MDB", "ESTC", "GTLB", "BILL",
+    "SHOP", "SE", "UBER", "LYFT", "DASH", "ABNB", "BKNG", "EXPE", "TRIP",
+    "PINS", "SNAP", "RBLX", "U", "TTWO", "EA", "ATVI", "NTES", "BILI",
+    "ARM", "SMCI", "DELL", "HPE", "WDC", "STX", "LRCX", "KLAC", "ONTO",
+    "TER", "ENTG", "WOLF", "MKSI", "ACLS", "CEVA", "ALGM", "DIOD", "MPWR",
+    "SLAB", "SWKS", "QRVO", "MTSI", "RMBS", "SITM", "AMBA", "CRUS", "ADI",
+    "MCHP", "NXPI", "ON", "IFNNY", "SSNLF",
+    # ── China / International ADRs ───────────────────────────────────────────
+    "BIDU", "JD", "PDD", "BABA", "NIO", "LI", "XPEV", "BEKE", "TME", "IQ",
+    "VNET", "GDS", "KSCP", "FUTU", "TIGR", "NOAH", "LAIX", "CNF", "ACH",
+    # ── Financials ───────────────────────────────────────────────────────────
+    "JPM", "BAC", "GS", "MS", "WFC", "C", "USB", "PNC", "TFC", "KEY",
+    "CFG", "FITB", "HBAN", "RF", "MTB", "ZION", "CMA", "FHN", "WAL",
+    "PACW", "BRK-B", "V", "MA", "PYPL", "AXP", "BLK", "SCHW", "IBKR",
+    "AMTD", "WEX", "FIS", "FISV", "GPN", "SQ", "AFRM", "UPST", "LC",
+    "SOFI", "NU", "OPEN", "UWMC", "RKT", "PFSI", "COOP", "NMR", "DB",
+    # ── Healthcare / Biotech ─────────────────────────────────────────────────
+    "JNJ", "PFE", "MRK", "ABBV", "LLY", "UNH", "CVS", "CI", "HUM", "ELV",
+    "CNC", "MOH", "WCG", "AMGN", "GILD", "REGN", "VRTX", "MRNA", "BNTX",
+    "NVAX", "SGEN", "ALNY", "BMRN", "RARE", "IONS", "DNLI", "RCKT", "KRYS",
+    "EDIT", "NTLA", "BEAM", "CRSP", "FATE", "BLUE", "ARVN", "KYMR", "CLOV",
+    "TDOC", "HIMS", "ACCD", "DOCS", "PHR", "VEEV", "IQVIA", "CRL", "MEDP",
+    "NEOG", "NVCR", "INVA", "SGFY", "EXAS", "ILMN", "PACB", "CDNA", "NTRA",
+    "TMO", "DHR", "A", "BIO", "TECH", "HOLX", "IDXX", "STE", "EW", "BSX",
+    "MDT", "ZBH", "ISRG", "SYK", "BAX", "BDX", "ABT", "DXCM", "TNDM",
+    # ── Energy ───────────────────────────────────────────────────────────────
+    "XOM", "CVX", "COP", "SLB", "HAL", "BKR", "OXY", "DVN", "FANG",
+    "MPC", "VLO", "PSX", "PBF", "DKL", "ET", "EPD", "WMB", "KMI", "TRGP",
+    "OKE", "LNG", "CTRA", "APA", "EQT", "AR", "RRC", "SWN", "CHK",
+    "MRO", "HES", "PR", "MTDR", "VNOM", "DINO", "SM", "REI",
+    # ── Utilities / Clean energy ─────────────────────────────────────────────
+    "NEE", "DUK", "SO", "AEP", "EXC", "XEL", "WEC", "ES", "CMS", "AES",
+    "PEG", "PPL", "ETR", "FE", "NI", "EVRG", "OGE", "AVA", "NWE", "SPWR",
+    "ENPH", "SEDG", "RUN", "NOVA", "ARRY", "FSLR", "CSIQ", "JKS",
+    "BE", "PLUG", "FCEL", "BLDP", "HYLN", "NKLA", "RIVN", "LCID",
+    # ── Industrials / Aerospace & Defense ────────────────────────────────────
+    "CAT", "DE", "HON", "GE", "RTX", "LMT", "NOC", "BA", "GD", "L3H",
+    "HII", "TDG", "HEI", "AXON", "LDOS", "SAIC", "CACI", "MANT", "BAH",
+    "UPS", "FDX", "XPO", "ODFL", "SAIA", "WERN", "KNX", "JBHT",
+    "MMM", "EMR", "ITW", "PH", "ROK", "DOV", "AME", "GNRC", "ALLE", "IR",
+    "RXO", "GXO", "CHRW", "EXPD", "ECHO", "FWRD",
+    # ── Consumer Discretionary ───────────────────────────────────────────────
+    "WMT", "TGT", "COST", "HD", "LOW", "NKE", "MCD", "SBUX", "YUM",
+    "CMG", "DPZ", "DRI", "TXRH", "JACK", "WEN", "QSR", "WING", "CAVA",
+    "LULU", "PVH", "RL", "HBI", "UA", "UAA", "CROX", "DECK", "SKX",
+    "TJX", "ROST", "BURL", "GPS", "ANF", "AEO", "URBN", "BOOT",
+    "TSCO", "BBY", "GME", "AMC", "CVNA", "KMX", "AN", "LAD", "SAH",
+    "ORLY", "AZO", "AAP", "GPC", "LKQ", "MNRO",
+    # ── Consumer Staples ─────────────────────────────────────────────────────
+    "PG", "KO", "PEP", "PM", "MO", "MDLZ", "KHC", "CPB", "HRL", "CAG",
+    "GIS", "K", "SJM", "MKC", "CHD", "CLX", "CL", "EL", "ULTA", "REV",
+    "SFM", "SPTN", "UNFI", "KR", "SYY", "US",
+    # ── REITs ────────────────────────────────────────────────────────────────
+    "AMT", "PLD", "EQIX", "CCI", "SPG", "O", "VICI", "PSA", "EXR",
+    "AVB", "EQR", "MAA", "UDR", "CPT", "ESS", "NNN", "ADC", "STAG",
+    "IIPR", "COLD", "DRE", "FR", "WPT", "REXR", "EGP", "TRNO",
+    "VTR", "PEAK", "WELL", "HR", "MPW", "SBAC", "AMH", "INVH",
+    # ── Materials ────────────────────────────────────────────────────────────
+    "LIN", "APD", "NUE", "FCX", "NEM", "GOLD", "AEM", "AG", "PAAS",
+    "AA", "CENX", "KALU", "ARNC", "ATI", "CMC", "STLD", "WOR",
+    "ALB", "SQM", "LTHM", "LAC", "PLL", "SGML", "MP", "NOVS",
+    "MOS", "NTR", "CF", "ICL", "IPI",
+    # ── Space / Next-gen tech ────────────────────────────────────────────────
+    "RKLB", "LUNR", "ASTS", "ACHR", "JOBY", "LILM", "ARCHER",
+    "IONQ", "QUBT", "RGTI", "QBTS", "IBM",
+    "MSTR", "COIN", "MARA", "RIOT", "HUT", "CLSK", "BTBT", "CIFR",
+    # ── Popular ETFs ─────────────────────────────────────────────────────────
+    "GLD", "IAU", "GLDM", "SLV", "PSLV", "PPLT", "PALL",
+    "USO", "UNG", "BOIL", "KOLD", "UCO", "SCO",
+    "TLT", "IEF", "SHY", "GOVT", "HYG", "JNK", "LQD", "VCIT",
+    "EEM", "EFA", "VEA", "VWO", "EWZ", "EWJ", "EWY", "EWG", "EWU",
+    "FXI", "KWEB", "MCHI",
+    "VTI", "IVV", "SCHB", "ITOT", "SPTM",
+    "SMH", "SOXX", "XSD", "FTXL", "SOXL", "SOXS",
+    "ARKK", "ARKG", "ARKW", "ARKF", "ARKQ", "ARKX",
+    "TQQQ", "SPXL", "UPRO", "TECL", "FNGU",
+    "SQQQ", "SPXS", "UVXY", "SVXY", "VXX", "VIXY",
+    "XLK", "XLF", "XLV", "XLE", "XLI", "XLY", "XLP", "XLU", "XLB", "XLRE",
+    "GDX", "GDXJ", "SIL", "SILJ", "COPX", "URA", "URNM", "NLR",
+    "ICLN", "TAN", "FAN", "QCLN", "PBW",
+    "IBB", "XBI", "LABU", "LABD", "FBT",
+    "KRE", "KBE", "IAT", "IAI",
+    "IYT", "XTN", "JETS",
+}
+
+KNOWN_TICKERS = sorted(set(DEFAULT_RISK_MODEL.keys()) | _TICKER_UNIVERSE)
 
 # ---------------------------------------------------------------------------
 # Preset quick-load bar
@@ -1973,8 +2257,9 @@ _divider()
 # ---------------------------------------------------------------------------
 
 book_names = list(st.session_state.books.keys())[:n_books]
-tabs = st.tabs(book_names + ["What-if", "Analytics", "Factor diagnostics"])
-whatif_tab    = tabs[-3]
+tabs = st.tabs(book_names + ["What-if", "Optimizer", "Analytics", "Factor diagnostics"])
+whatif_tab    = tabs[-4]
+optimizer_tab = tabs[-3]
 analytics_tab = tabs[-2]
 factor_tab    = tabs[-1]
 
@@ -2025,25 +2310,25 @@ for tab, name in zip(tabs, book_names):
                         preset_df = build_preset(preset_name)
                         st.session_state.books[name] = preset_df
                         st.session_state[active_key] = preset_name
-                        known = [t for t in preset_df["ticker"].tolist() if t in KNOWN_TICKERS]
-                        st.session_state[f"multisel_{name}"] = known
+                        st.session_state[f"multisel_{name}"] = preset_df["ticker"].tolist()
                         st.rerun()
 
         # --- Ticker management -------------------------------------------
         _section_label(f"Holdings — {name}")
 
         current_tickers = st.session_state.books[name]["ticker"].tolist()
-        known_in_current = [t for t in current_tickers if t in KNOWN_TICKERS]
-        custom_in_current = [t for t in current_tickers if t not in KNOWN_TICKERS]
+        # Options = every pre-defined ticker + anything already in this book so
+        # current positions are always searchable regardless of DEFAULT_RISK_MODEL coverage.
+        multisel_options = sorted(set(KNOWN_TICKERS) | set(current_tickers))
 
         col_sel, col_custom = st.columns([3, 1])
         with col_sel:
             selected_known = st.multiselect(
                 "Add / remove tickers",
-                options=KNOWN_TICKERS,
-                default=known_in_current,
+                options=multisel_options,
+                default=current_tickers,
                 key=f"multisel_{name}",
-                help="Select from known tickers. Use the field on the right for anything else.",
+                help="Select from known tickers. Use the field on the right for anything not listed.",
             )
         with col_custom:
             custom_input = st.text_input(
@@ -2060,10 +2345,6 @@ for tab, name in zip(tabs, book_names):
             for ct in custom_input.strip().upper().split():
                 if ct and ct not in new_tickers:
                     new_tickers.append(ct)
-        # Keep any custom tickers already in the book that aren't in the multiselect
-        for ct in custom_in_current:
-            if ct not in new_tickers:
-                new_tickers.append(ct)
 
         # Rebuild full book from new ticker list, preserving existing rows
         existing_full = st.session_state.books[name]
@@ -2554,9 +2835,7 @@ with whatif_tab:
             })
             merged = sync_risk_model(wf_simple, src_df)
             st.session_state.books[dest] = merged
-            st.session_state[f"multisel_{dest}"] = [
-                t for t in wf_simple["ticker"] if t in KNOWN_TICKERS
-            ]
+            st.session_state[f"multisel_{dest}"] = wf_simple["ticker"].tolist()
             st.success(f"✓ Applied to {dest}. Switch to that tab to view.")
 
         with col_apply_b:
@@ -2677,6 +2956,129 @@ with whatif_tab:
                 st.info(f"Add shares to '{src}' on its tab first to enable side-by-side comparison.")
         elif wf_mc and wf_mc["src"] != src:
             st.info("Source book changed — re-run Monte Carlo to refresh.")
+
+# ---------------------------------------------------------------------------
+# Optimizer tab — mean-variance efficient frontier
+# ---------------------------------------------------------------------------
+
+with optimizer_tab:
+    _section_label("Mean-variance optimizer")
+    st.caption(
+        "Markowitz efficient frontier built from the simulator's **3-factor covariance** "
+        "(market / AI / power) rather than a raw sample covariance. Long-only, fully "
+        "invested. Compares your current book against the **max-Sharpe (tangency)** and "
+        "**minimum-variance** portfolios on the frontier."
+    )
+
+    opt_books = [
+        b for b in book_names
+        if isinstance(st.session_state.get(f"enriched_{b}"), pd.DataFrame)
+        and not st.session_state[f"enriched_{b}"].empty
+    ]
+
+    if not opt_books:
+        st.info("Load and price at least one book first — open a book tab, then return here.")
+    else:
+        c1, c2, c3 = st.columns([2, 1.4, 1.4])
+        with c1:
+            opt_src = st.radio("Optimize book", opt_books, horizontal=True, key="opt_src")
+        with c2:
+            rf_pct = st.number_input("Risk-free rate (%)", 0.0, 10.0, 4.5, 0.25,
+                                     key="opt_rf",
+                                     help="Annual. Used for the Sharpe ratio and the tangency portfolio.")
+        with c3:
+            cap_pct = st.slider("Max weight / name (%)", 10, 100, 100, 5, key="opt_cap",
+                                help="Per-position cap. 100% = unconstrained. Lower it to force diversification.")
+
+        edf = st.session_state[f"enriched_{opt_src}"].copy()
+        edf = edf.dropna(subset=["weight"])
+        edf = edf[edf["weight"] > 0].copy()
+        edf["ticker"] = edf["ticker"].astype(str)
+
+        if len(edf) < 2:
+            st.info("Need at least two priced positions to build a frontier.")
+        else:
+            tickers   = tuple(edf["ticker"].tolist())
+            mu_t      = tuple(float(x) for x in edf["mu"].fillna(SPX_MU))
+            sig_t     = tuple(float(x) for x in edf["sigma"].fillna(0.40))
+            loadings_t = tuple(
+                (float(m), float(a), float(p))
+                for m, a, p in zip(edf["f_market"].fillna(0.0),
+                                   edf["f_ai"].fillna(0.0),
+                                   edf["f_power"].fillna(0.0))
+            )
+            cur_w_t = tuple(float(x) for x in edf["weight"])
+            rf  = rf_pct / 100.0
+            cap = cap_pct / 100.0
+
+            with st.spinner("Solving frontier…"):
+                payload = compute_frontier(tickers, mu_t, sig_t, loadings_t,
+                                           cur_w_t, rf, cap)
+
+            cur, mxs, mnv = payload["current"], payload["max_sharpe"], payload["min_var"]
+
+            # KPI row — current vs optimal.
+            _kpi_row(
+                _kpi("Current Sharpe",   f"{cur['sharpe']:.2f}", "muted"),
+                _kpi("Max Sharpe",       f"{mxs['sharpe']:.2f}", "blue"),
+                _kpi("Min-Var Sharpe",   f"{mnv['sharpe']:.2f}", "muted"),
+                _kpi("Sharpe uplift",
+                     f"+{mxs['sharpe'] - cur['sharpe']:.2f}"
+                     if mxs['sharpe'] >= cur['sharpe']
+                     else f"{mxs['sharpe'] - cur['sharpe']:.2f}",
+                     "green" if mxs['sharpe'] >= cur['sharpe'] else "red"),
+            )
+            _kpi_row(
+                _kpi("Current E[r] / σ", f"{cur['ret']*100:.1f}% / {cur['vol']*100:.1f}%", "muted"),
+                _kpi("Max-Sharpe E[r] / σ", f"{mxs['ret']*100:.1f}% / {mxs['vol']*100:.1f}%", "blue"),
+                _kpi("Min-Var E[r] / σ", f"{mnv['ret']*100:.1f}% / {mnv['vol']*100:.1f}%", "muted"),
+                _kpi("Vol reduction (min-var)",
+                     f"{(cur['vol'] - mnv['vol'])*100:.1f} pp", "green"),
+            )
+
+            st.pyplot(frontier_chart(payload), use_container_width=True)
+            plt.close("all")
+
+            # Weights comparison table.
+            _section_label("Target weights vs current")
+            wtbl = pd.DataFrame({
+                "Ticker":      list(payload["tickers"]),
+                "Current %":   np.array(cur["w"]) * 100,
+                "Max-Sharpe %": np.array(mxs["w"]) * 100,
+                "Min-Var %":   np.array(mnv["w"]) * 100,
+            })
+            wtbl["Δ to Max-Sharpe"] = wtbl["Max-Sharpe %"] - wtbl["Current %"]
+            wtbl = wtbl.sort_values("Max-Sharpe %", ascending=False).reset_index(drop=True)
+            st.dataframe(
+                wtbl.style.format({
+                    "Current %": "{:.1f}", "Max-Sharpe %": "{:.1f}",
+                    "Min-Var %": "{:.1f}", "Δ to Max-Sharpe": "{:+.1f}",
+                }).background_gradient(subset=["Δ to Max-Sharpe"], cmap="RdYlGn",
+                                       vmin=-30, vmax=30),
+                use_container_width=True, hide_index=True,
+            )
+
+            # Plain-language read of the biggest suggested moves.
+            moves = wtbl.assign(delta=wtbl["Δ to Max-Sharpe"])
+            moves = moves.reindex(moves["delta"].abs().sort_values(ascending=False).index)
+            adds  = moves[moves["delta"] > 0.5].head(3)
+            trims = moves[moves["delta"] < -0.5].head(3)
+            bits = []
+            if not adds.empty:
+                bits.append("**add** " + ", ".join(
+                    f"{t} (+{d:.0f}pp)" for t, d in zip(adds["Ticker"], adds["delta"])))
+            if not trims.empty:
+                bits.append("**trim** " + ", ".join(
+                    f"{t} ({d:.0f}pp)" for t, d in zip(trims["Ticker"], trims["delta"])))
+            if bits:
+                st.markdown("To reach the max-Sharpe portfolio, " + " and ".join(bits) + ".")
+
+            st.caption(
+                "Theoretical mean-variance output, not advice. Expected returns are the "
+                "model's hand-set μ; covariance is Σ = B·diag(σ_f²)·Bᵀ + diag(idiosyncratic) "
+                "with factor vols σ = [16%, 28%, 35%] for market / AI / power."
+            )
+
 
 # ---------------------------------------------------------------------------
 # Analytics tab

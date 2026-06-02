@@ -5,7 +5,7 @@ Run with:
     streamlit run portfolio_lab.py
 
 Features:
-  - Preset portfolios (Sample Portfolio, Conservative, Moderate Growth, Aggressive AI, 100% Index)
+  - Preset portfolios (My Portfolio, Conservative, Moderate Growth, Aggressive AI, 100% Index)
   - Easy ticker management via multiselect + simple shares editor
   - Scenario buttons (Base / AI Boom / Risk-Off / Mild Bear / Custom)
   - Advisor plain-English summary card
@@ -28,7 +28,6 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import scipy.stats
-from scipy.optimize import minimize
 import streamlit as st
 import yfinance as yf
 import matplotlib.pyplot as plt
@@ -40,16 +39,16 @@ from build_pdf_report import build_report as _build_pdf_report
 # ---------------------------------------------------------------------------
 
 HERE               = Path(__file__).parent
-HOLDINGS_FP        = HERE / os.environ.get("HOLDINGS_FILE", "holdings_demo.json")
+HOLDINGS_FP        = HERE / os.environ.get("HOLDINGS_FILE", "holdings.json")
 SCENARIOS_FP       = HERE / "lab_scenarios.json"
 PRICE_CACHE_FP     = HERE / "price_cache.json"
 CACHE_MAX_AGE_DAYS = 1
 
-NAVY = "#0e2240"
-GOLD = "#2e74e8"
-RED  = "#e05a5a"
+NAVY = "#1e3a5f"
+GOLD = "#b8860b"
+RED  = "#c0392b"
 
-st.set_page_config(page_title="Portfolio Lab", layout="wide")
+st.set_page_config(page_title="Portfolio Lab", layout="wide", page_icon="📊")
 
 # ---------------------------------------------------------------------------
 # CSS
@@ -57,422 +56,290 @@ st.set_page_config(page_title="Portfolio Lab", layout="wide")
 
 st.markdown("""
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Barlow:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
-  /* ── Tokens ──────────────────────────────────────────────────────── */
+  /* ══ Design tokens ════════════════════════════════════════════════ */
   :root {
-    --bg:      #07101e;
-    --bg2:     #0c1828;
-    --card:    rgba(255,255,255,0.04);
-    --border:  rgba(255,255,255,0.08);
-    --border2: rgba(255,255,255,0.18);
-    --blue2:   #2e74e8;
-    --teal:    #00e0a4;
-    --teal-dim:rgba(0,224,164,0.14);
-    --white:   #ffffff;
-    --text:    rgba(255,255,255,0.9);
-    --text2:   rgba(255,255,255,0.65);
-    --muted:   rgba(255,255,255,0.45);
-    --green:   #3ec97a;
-    --red:     #e05a5a;
-    --amber:   #f0a040;
+    --bg:     #e8edf5;
+    --card:   #ffffff;
+    --navy:   #1e3a5f;
+    --navy2:  #2d5282;
+    --accent: #3b82f6;
+    --green:  #059669;
+    --red:    #dc2626;
+    --amber:  #d97706;
+    --text:   #0f172a;
+    --text2:  #374151;
+    --muted:  #64748b;
+    --border: #e2e8f0;
+    --sh1: 0 1px 3px rgba(15,23,42,.07), 0 1px 2px rgba(15,23,42,.04);
+    --sh2: 0 4px 12px rgba(15,23,42,.09), 0 2px 4px rgba(15,23,42,.05);
+    --sh3: 0 12px 32px rgba(15,23,42,.14), 0 4px 8px rgba(15,23,42,.07);
+    --r1: 6px; --r2: 10px; --r3: 16px;
   }
 
-  /* ── Base ────────────────────────────────────────────────────────── */
+  /* ══ Base ═════════════════════════════════════════════════════════ */
   html, body, .stApp {
-    font-family: 'Barlow', system-ui, sans-serif !important;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
     background: var(--bg) !important;
-    color: var(--text) !important;
   }
-  .block-container { padding-top: 1.5rem !important; max-width: 1440px !important; }
-  h1, h2, h3, h4 {
-    font-family: 'Barlow Condensed', sans-serif !important;
-    font-weight: 800 !important;
-    text-transform: uppercase !important;
-    letter-spacing: -0.01em !important;
-  }
+  .block-container { padding-top: 1.5rem !important; max-width: 1440px; }
+  h2, h3 { color: var(--text) !important; font-weight: 600; }
 
-  /* ── Sidebar ─────────────────────────────────────────────────────── */
+  /* ══ Sidebar ══════════════════════════════════════════════════════ */
   [data-testid="stSidebar"] {
-    background: #040b14 !important;
-    border-right: 1px solid var(--border) !important;
+    background: #060d1a !important;
+    border-right: 1px solid #0d1829 !important;
   }
-  [data-testid="stSidebar"] * { color: var(--muted) !important; }
-  [data-testid="stSidebar"] label {
-    font-family: 'JetBrains Mono', monospace !important;
-    font-size: 0.58rem !important;
-    letter-spacing: 0.1em !important;
-    text-transform: uppercase !important;
-  }
+  [data-testid="stSidebar"] * { color: #94a3b8 !important; }
+  [data-testid="stSidebar"] h1,
+  [data-testid="stSidebar"] h2,
+  [data-testid="stSidebar"] h3,
+  [data-testid="stSidebar"] strong { color: #f1f5f9 !important; }
   [data-testid="stSidebar"] input,
   [data-testid="stSidebar"] select {
-    background: rgba(255,255,255,0.05) !important;
-    border: 1px solid var(--border) !important;
-    border-radius: 0 !important;
-    color: var(--white) !important;
+    background: #1e293b !important;
+    border-color: #334155 !important;
+    color: #e2e8f0 !important;
+    border-radius: var(--r1) !important;
   }
   [data-testid="stSidebar"] [data-baseweb="slider"] > div:first-child {
-    background: rgba(255,255,255,0.08) !important;
-    border-radius: 0 !important;
+    background: #1e293b !important;
   }
   [data-testid="stSidebar"] [data-baseweb="slider"] > div:first-child > div {
-    background: var(--blue2) !important;
+    background: var(--accent) !important;
   }
   [data-testid="stSidebar"] [data-baseweb="slider"] [role="slider"] {
-    background: var(--white) !important;
-    border: 2px solid var(--blue2) !important;
-    border-radius: 0 !important;
-    box-shadow: 0 0 0 4px rgba(46,116,232,0.2) !important;
+    background: #60a5fa !important;
+    border-color: var(--accent) !important;
+    box-shadow: 0 0 0 4px rgba(59,130,246,0.28) !important;
   }
 
-  /* ── Sidebar brand & sections ────────────────────────────────────── */
+  /* ══ Sidebar brand & sections ═════════════════════════════════════ */
   .sidebar-brand {
-    padding: 1.25rem 0 1.5rem;
-    border-bottom: 1px solid var(--border);
-    margin-bottom: 1.5rem;
+    padding: 18px 0 22px 0;
+    border-bottom: 1px solid #1e293b;
+    margin-bottom: 22px;
   }
   .sb-name {
-    font-family: 'Barlow Condensed', sans-serif !important;
-    font-size: 1.35rem !important; font-weight: 800 !important;
-    text-transform: uppercase !important; letter-spacing: 0.01em !important;
-    color: var(--white) !important;
+    font-size: 1.05rem; font-weight: 700;
+    color: #f1f5f9 !important; letter-spacing: -0.02em;
   }
   .sb-sub {
-    font-family: 'JetBrains Mono', monospace !important;
-    font-size: 0.55rem !important; letter-spacing: 0.12em !important;
-    text-transform: uppercase !important; color: var(--muted) !important;
-    margin-top: 0.25rem !important;
+    font-size: 0.63rem; color: #475569 !important;
+    margin-top: 3px; text-transform: uppercase; letter-spacing: 0.14em;
   }
   .sidebar-section {
-    margin: 1.5rem 0 0.75rem;
-    padding-bottom: 0.5rem;
-    border-bottom: 1px solid var(--border);
+    margin: 22px 0 10px 0;
+    padding-bottom: 7px;
+    border-bottom: 1px solid #1e293b;
   }
   .sidebar-section span {
-    font-family: 'JetBrains Mono', monospace !important;
-    font-size: 0.55rem !important; font-weight: 500 !important;
-    text-transform: uppercase !important; letter-spacing: 0.12em !important;
-    color: var(--blue2) !important;
+    font-size: 0.64rem; font-weight: 700;
+    color: #475569 !important; text-transform: uppercase; letter-spacing: 0.14em;
   }
 
-  /* ── Hero ────────────────────────────────────────────────────────── */
+  /* ══ Hero ══════════════════════════════════════════════════════════ */
   .hero {
-    background: var(--bg2);
-    border: 1px solid var(--border);
-    border-top: 2px solid var(--blue2);
-    padding: 2.25rem 2.5rem;
-    margin-bottom: 2rem;
+    background: linear-gradient(135deg, #060d1a 0%, #1e3a5f 48%, #2d5282 100%);
+    border-radius: var(--r3);
+    padding: 36px 44px;
+    margin-bottom: 32px;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 2rem;
+    gap: 32px;
     position: relative;
     overflow: hidden;
+    box-shadow: var(--sh3);
   }
   .hero::before {
-    content: ''; position: absolute; inset: 0;
-    background-image: radial-gradient(circle, rgba(46,116,232,0.1) 1px, transparent 1px);
-    background-size: 24px 24px; pointer-events: none;
+    content: ''; position: absolute;
+    top: -55%; right: -5%; width: 500px; height: 500px;
+    background: radial-gradient(circle, rgba(59,130,246,.18) 0%, transparent 65%);
+    pointer-events: none;
   }
   .hero-left { position: relative; z-index: 1; flex: 1; }
   .hero-eyebrow {
-    font-family: 'JetBrains Mono', monospace !important;
-    font-size: 0.6rem !important; letter-spacing: 0.14em !important;
-    text-transform: uppercase !important; color: var(--blue2) !important;
-    margin-bottom: 0.75rem !important;
-    display: flex; align-items: center; gap: 0.6rem;
-  }
-  .hero-eyebrow::before {
-    content: ''; display: inline-block;
-    width: 20px; height: 1.5px; background: var(--blue2);
+    font-size: 0.62rem; font-weight: 700;
+    color: #60a5fa; letter-spacing: 0.20em;
+    text-transform: uppercase; margin-bottom: 10px;
   }
   .hero h1 {
-    font-family: 'Barlow Condensed', sans-serif !important;
-    font-size: 2.75rem !important; font-weight: 800 !important;
-    text-transform: uppercase !important; letter-spacing: -0.01em !important;
-    line-height: 0.95 !important; color: var(--white) !important;
-    margin: 0 0 0.85rem !important;
+    font-size: 2.25rem; font-weight: 800;
+    color: #f8fafc !important; margin: 0 0 10px 0;
+    letter-spacing: -0.045em; line-height: 1.1;
   }
   .hero-sub {
-    font-size: 0.82rem !important; color: var(--muted) !important;
-    line-height: 1.75 !important; margin: 0 0 1rem !important; max-width: 560px;
+    color: #94a3b8; font-size: 0.87rem;
+    margin: 0 0 20px 0; line-height: 1.65; max-width: 520px;
   }
-  .hero-pills { display: flex; gap: 8px; flex-wrap: wrap; }
+  .hero-pills { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   .hero-pill {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.57rem; letter-spacing: 0.04em;
-    color: var(--muted); border: 1px solid var(--border); padding: 0.2rem 0.6rem;
+    background: rgba(255,255,255,0.07);
+    color: #cbd5e1; border: 1px solid rgba(255,255,255,0.10);
+    border-radius: 20px; padding: 4px 13px;
+    font-size: 0.70rem; font-weight: 500;
   }
   .hero-pill.live {
-    color: var(--green); border-color: rgba(62,201,122,0.25);
-    background: rgba(62,201,122,0.07);
+    background: rgba(5,150,105,.18);
+    color: #6ee7b7; border-color: rgba(5,150,105,.28);
   }
-  .hero-pill.demo {
-    color: var(--amber); border-color: rgba(240,160,64,0.25);
-    background: rgba(240,160,64,0.07);
+  .hero-right { display: flex; gap: 10px; position: relative; z-index: 1; flex-shrink: 0; }
+  .hero-stat {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.10);
+    border-radius: var(--r2); padding: 18px 22px; text-align: center; min-width: 115px;
   }
-  .hero-right {
-    display: flex; gap: 1px; background: var(--border);
-    border: 1px solid var(--border);
-    position: relative; z-index: 1; flex-shrink: 0;
-  }
-  .hero-stat { background: var(--bg2); padding: 1.25rem 1.5rem; min-width: 100px; }
   .hs-val {
-    font-family: 'Barlow Condensed', sans-serif !important;
-    font-size: 1.75rem !important; font-weight: 800 !important;
-    color: var(--white) !important; line-height: 1 !important;
-    text-transform: uppercase !important;
+    font-size: 1.30rem; font-weight: 700;
+    color: #f8fafc; letter-spacing: -0.025em;
   }
   .hs-lbl {
-    font-family: 'JetBrains Mono', monospace !important;
-    font-size: 0.52rem !important; letter-spacing: 0.1em !important;
-    text-transform: uppercase !important; color: var(--muted) !important;
-    margin-top: 0.3rem !important;
+    font-size: 0.63rem; color: #94a3b8;
+    text-transform: uppercase; letter-spacing: 0.12em; margin-top: 5px;
   }
 
-  /* ── Section labels ──────────────────────────────────────────────── */
+  /* ══ Section labels ════════════════════════════════════════════════ */
   .section-label {
-    display: flex; align-items: center; gap: 0.6rem;
-    margin: 2rem 0 1rem;
-  }
-  .section-label::before {
-    content: ''; display: inline-block;
-    width: 24px; height: 1.5px; background: var(--blue2);
+    margin: 30px 0 14px 0; padding-left: 12px;
+    border-left: 3px solid var(--navy); display: flex; align-items: center;
   }
   .section-label span {
-    font-family: 'JetBrains Mono', monospace !important;
-    font-size: 0.6rem !important; letter-spacing: 0.14em !important;
-    text-transform: uppercase !important; color: var(--blue2) !important;
+    font-size: 0.70rem; font-weight: 700;
+    color: var(--muted); text-transform: uppercase; letter-spacing: 0.13em;
   }
 
-  /* ── KPI cards ───────────────────────────────────────────────────── */
-  .kpi-row {
-    display: flex; gap: 1px; background: var(--border);
-    border: 1px solid var(--border); margin: 1.25rem 0;
-  }
+  /* ══ KPI cards ═════════════════════════════════════════════════════ */
+  .kpi-row { display: flex; gap: 10px; margin: 10px 0; }
   .kpi {
-    flex: 1; min-width: 0; background: var(--bg2);
-    padding: 1.2rem 1.5rem 1.25rem;
-    border-top: 2px solid transparent;
-    transition: border-color .15s;
+    flex: 1; min-width: 0;
+    background: var(--card); border-radius: var(--r2);
+    padding: 18px 20px; border: 1px solid var(--border);
+    border-top: 3px solid #e2e8f0; box-shadow: var(--sh2);
+    transition: transform .12s, box-shadow .12s;
   }
-  .kpi:hover { border-top-color: var(--teal); }
+  .kpi:hover { transform: translateY(-1px); box-shadow: var(--sh3); }
+  .kpi.green { border-top-color: var(--green); }
+  .kpi.red   { border-top-color: var(--red); }
+  .kpi.blue  { border-top-color: var(--accent); }
+  .kpi.gold  { border-top-color: var(--amber); }
   .kpi .kval {
-    font-family: 'JetBrains Mono', monospace !important;
-    font-size: 1.6rem !important; font-weight: 500 !important;
-    color: var(--teal) !important; line-height: 1.05 !important;
-    letter-spacing: -0.02em !important;
-    font-variant-numeric: tabular-nums !important;
+    font-size: 1.45rem; font-weight: 700;
+    color: var(--text); line-height: 1.15; letter-spacing: -0.025em;
   }
-  .kpi.green .kval { color: var(--green) !important; }
-  .kpi.red   .kval { color: var(--red) !important; }
-  .kpi.gold  .kval { color: var(--amber) !important; }
-  .kpi.blue  .kval { color: var(--teal) !important; }
-  .kpi.muted .kval { color: var(--white) !important; }
   .kpi .klbl {
-    font-family: 'JetBrains Mono', monospace !important;
-    font-size: 0.55rem !important; letter-spacing: 0.12em !important;
-    text-transform: uppercase !important; color: var(--blue2) !important;
-    margin-top: 0.4rem !important;
+    font-size: 0.66rem; color: var(--muted); font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.10em; margin-top: 6px;
   }
 
-  /* ── Preset cards ────────────────────────────────────────────────── */
+  /* ══ Preset cards ══════════════════════════════════════════════════ */
   .preset-card {
-    background: var(--card); border: 1px solid var(--border);
-    padding: 1.25rem 1.5rem; margin-bottom: 8px;
-    transition: border-color .15s; min-height: 120px;
+    background: var(--card); border: 1.5px solid var(--border);
+    border-radius: var(--r2); padding: 16px; margin-bottom: 8px;
+    box-shadow: var(--sh1); transition: border-color .15s, box-shadow .15s;
+    min-height: 120px;
   }
-  .preset-card.active { border-color: var(--blue2); background: rgba(46,116,232,0.08); }
-  .preset-card:hover:not(.active) { border-color: var(--border2); }
-  .pc-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem; }
-  .pc-icon {
-    font-family: 'JetBrains Mono', monospace !important;
-    font-size: 0.55rem !important; letter-spacing: 0.1em !important;
-    color: var(--blue2) !important;
+  .preset-card.active {
+    border-color: var(--navy);
+    background: linear-gradient(135deg, #f0f5ff 0%, #f8faff 100%);
+    box-shadow: 0 0 0 3px rgba(30,58,95,.10), var(--sh2);
   }
+  .preset-card:hover:not(.active) { border-color: #cbd5e1; box-shadow: var(--sh2); }
+  .pc-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
+  .pc-icon { font-size: 1.5rem; line-height: 1; }
   .pc-badge {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.52rem; color: var(--blue2) !important;
-    background: rgba(46,116,232,0.15); padding: 0.15rem 0.5rem;
-    text-transform: uppercase; letter-spacing: 0.08em; display: none;
+    font-size: 0.58rem; font-weight: 700; color: var(--navy);
+    background: rgba(30,58,95,.10); border-radius: 10px;
+    padding: 3px 8px; text-transform: uppercase; letter-spacing: 0.08em; display: none;
   }
   .preset-card.active .pc-badge { display: inline-block; }
-  .pc-name {
-    font-family: 'Barlow Condensed', sans-serif !important;
-    font-size: 1rem !important; font-weight: 800 !important;
-    text-transform: uppercase !important; color: var(--white) !important;
-    margin-bottom: 0.35rem !important;
-  }
-  .pc-desc { font-size: 0.72rem !important; color: var(--muted) !important; line-height: 1.6 !important; }
+  .pc-name { font-size: 0.86rem; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+  .pc-desc { font-size: 0.71rem; color: var(--muted); line-height: 1.55; }
 
-  /* ── Scenario cards ──────────────────────────────────────────────── */
+  /* ══ Scenario cards ════════════════════════════════════════════════ */
   .scenario-card {
-    background: var(--card); border: 1px solid var(--border);
-    padding: 1rem 1.25rem; margin-bottom: 8px;
-    transition: border-color .15s; min-height: 90px;
+    background: var(--card); border: 1.5px solid var(--border);
+    border-radius: var(--r2); padding: 14px 16px; margin-bottom: 8px;
+    box-shadow: var(--sh1); transition: border-color .15s, box-shadow .15s; min-height: 90px;
   }
-  .scenario-card.active { border-color: var(--blue2); background: rgba(46,116,232,0.07); }
-  .scenario-card:hover:not(.active) { border-color: var(--border2); }
-  .sc-header { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.4rem; }
-  .sc-icon {
-    font-family: 'JetBrains Mono', monospace !important;
-    font-size: 0.5rem !important; letter-spacing: 0.08em !important;
-    color: var(--blue2) !important; flex-shrink: 0;
+  .scenario-card.active {
+    border-color: var(--accent);
+    background: linear-gradient(135deg, #eff6ff 0%, #f8faff 100%);
+    box-shadow: 0 0 0 3px rgba(59,130,246,.12), var(--sh2);
   }
-  .sc-name {
-    font-family: 'Barlow Condensed', sans-serif !important;
-    font-size: 0.92rem !important; font-weight: 800 !important;
-    text-transform: uppercase !important; color: var(--white) !important;
-  }
+  .scenario-card:hover:not(.active) { border-color: #cbd5e1; box-shadow: var(--sh2); }
+  .sc-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .sc-icon { font-size: 1.1rem; }
+  .sc-name { font-size: 0.84rem; font-weight: 700; color: var(--text); }
   .sc-badge {
-    margin-left: auto; font-family: 'JetBrains Mono', monospace;
-    font-size: 0.5rem; color: var(--blue2) !important;
-    background: rgba(46,116,232,0.15); padding: 0.15rem 0.5rem;
-    text-transform: uppercase; letter-spacing: 0.08em;
+    margin-left: auto; font-size: 0.58rem; font-weight: 700; color: var(--accent);
+    background: rgba(59,130,246,.12); border-radius: 10px;
+    padding: 3px 8px; text-transform: uppercase; letter-spacing: 0.08em;
   }
-  .sc-desc { font-size: 0.7rem !important; color: var(--muted) !important; line-height: 1.6 !important; }
+  .sc-desc { font-size: 0.70rem; color: var(--muted); line-height: 1.55; }
 
-  /* ── Advisor card ────────────────────────────────────────────────── */
+  /* ══ Advisor card ══════════════════════════════════════════════════ */
   .advisor-card {
     background: var(--card); border: 1px solid var(--border);
-    border-left: 2px solid var(--blue2);
-    padding: 1.5rem 2rem; margin: 1rem 0 1.5rem;
-    line-height: 1.85; color: var(--text2);
+    border-left: 4px solid var(--navy); border-radius: var(--r2);
+    padding: 22px 26px; margin: 16px 0 22px 0;
+    line-height: 1.85; color: var(--text2); box-shadow: var(--sh2);
   }
-  .advisor-card strong { color: var(--white) !important; font-weight: 600; }
+  .advisor-card strong { color: var(--text); font-weight: 600; }
   .advisor-card h4 {
-    font-family: 'JetBrains Mono', monospace !important;
-    font-size: 0.6rem !important; letter-spacing: 0.12em !important;
-    text-transform: uppercase !important; color: var(--blue2) !important;
-    font-weight: 500 !important; margin: 0 0 1rem !important;
-    padding-bottom: 0.75rem !important; border-bottom: 1px solid var(--border) !important;
+    color: var(--text); margin: 0 0 12px 0; font-size: 0.92rem; font-weight: 700;
+    border-bottom: 1px solid var(--border); padding-bottom: 10px;
   }
 
-  /* ── Tabs ────────────────────────────────────────────────────────── */
+  /* ══ Tabs ══════════════════════════════════════════════════════════ */
   .stTabs [data-baseweb="tab-list"] {
-    gap: 0; background: var(--bg2) !important;
-    border-bottom: 1px solid var(--border) !important;
-    padding: 0 !important; border-radius: 0 !important;
+    gap: 2px; background: #d8dfe9;
+    border-radius: var(--r1); padding: 4px; border: 1px solid #c8d0de;
   }
   .stTabs [data-baseweb="tab"] {
-    font-family: 'JetBrains Mono', monospace !important;
-    font-size: 0.6rem !important; letter-spacing: 0.08em !important;
-    text-transform: uppercase !important; color: var(--muted) !important;
-    font-weight: 500 !important; border-radius: 0 !important;
-    padding: 0.75rem 1.5rem !important;
-    border-bottom: 2px solid transparent !important; background: transparent !important;
+    color: var(--muted) !important; font-weight: 500 !important;
+    border-radius: 4px !important; padding: 6px 18px !important; font-size: 0.84rem !important;
   }
   .stTabs [aria-selected="true"] {
-    background: transparent !important; color: var(--white) !important;
-    border-bottom-color: var(--blue2) !important; box-shadow: none !important;
+    background: var(--card) !important; color: var(--text) !important;
+    font-weight: 600 !important; box-shadow: var(--sh1) !important;
   }
 
-  /* ── Buttons ─────────────────────────────────────────────────────── */
+  /* ══ Buttons ═══════════════════════════════════════════════════════ */
   .stButton > button {
-    border-radius: 0 !important;
-    font-family: 'JetBrains Mono', monospace !important;
-    font-size: 0.6rem !important; letter-spacing: 0.07em !important;
-    text-transform: uppercase !important; background: transparent !important;
-    color: var(--muted) !important; border: 1px solid var(--border) !important;
-    box-shadow: none !important; transition: all .12s !important;
+    border-radius: var(--r1) !important; font-weight: 500 !important;
+    font-size: 0.82rem !important; background: var(--card) !important;
+    color: var(--text2) !important; border: 1px solid var(--border) !important;
+    box-shadow: var(--sh1) !important; transition: all .12s ease !important;
   }
   .stButton > button[kind="primary"] {
-    background: var(--blue2) !important;
-    border-color: var(--blue2) !important; color: var(--white) !important;
+    background: var(--navy) !important; border-color: var(--navy) !important;
+    color: #ffffff !important; box-shadow: var(--sh2) !important;
   }
-  .stButton > button:hover { border-color: var(--border2) !important; color: var(--white) !important; }
+  .stButton > button:hover { opacity: 0.84 !important; }
 
-  /* ── Expanders ───────────────────────────────────────────────────── */
+  /* ══ Expanders ═════════════════════════════════════════════════════ */
   [data-testid="stExpander"] {
-    border: 1px solid var(--border) !important; border-radius: 0 !important;
-    background: var(--card) !important; box-shadow: none !important;
-  }
-  [data-testid="stExpander"] summary {
-    font-family: 'JetBrains Mono', monospace !important;
-    font-size: 0.6rem !important; letter-spacing: 0.07em !important;
-    text-transform: uppercase !important;
+    border: 1px solid var(--border) !important; border-radius: var(--r2) !important;
+    background: var(--card) !important; box-shadow: var(--sh1) !important;
   }
 
-  /* ── Metric tiles ────────────────────────────────────────────────── */
+  /* ══ Metric tiles ══════════════════════════════════════════════════ */
   [data-testid="metric-container"] {
-    background: var(--card) !important; border: 1px solid var(--border) !important;
-    border-radius: 0 !important; padding: 1.25rem 1.5rem !important; box-shadow: none !important;
-  }
-  [data-testid="metric-container"] label {
-    font-family: 'JetBrains Mono', monospace !important;
-    font-size: 0.55rem !important; letter-spacing: 0.1em !important;
-    text-transform: uppercase !important;
-  }
-  [data-testid="metric-container"] [data-testid="stMetricValue"] {
-    font-family: 'Barlow Condensed', sans-serif !important;
-    font-size: 2rem !important; font-weight: 800 !important; color: var(--white) !important;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--r2); padding: 16px 20px; box-shadow: var(--sh2);
   }
 
-  /* ── Multiselect tags ────────────────────────────────────────────── */
-  [data-baseweb="tag"] {
-    background: rgba(46,116,232,0.15) !important;
-    border: 1px solid rgba(46,116,232,0.3) !important; border-radius: 0 !important;
-  }
-  [data-baseweb="tag"] span:not([role="img"]) {
-    font-family: 'JetBrains Mono', monospace !important;
-    font-size: 0.62rem !important; letter-spacing: 0.03em !important;
-    color: #93b8f5 !important; text-transform: uppercase !important;
-  }
-
-  /* ── Inputs / selects ────────────────────────────────────────────── */
-  [data-baseweb="select"] > div:first-child {
-    background: rgba(255,255,255,0.04) !important;
-    border: 1px solid var(--border) !important; border-radius: 0 !important;
-  }
-  [data-baseweb="input"] {
-    background: rgba(255,255,255,0.04) !important;
-    border: 1px solid var(--border) !important; border-radius: 0 !important;
-  }
-
-  /* ── Dataframes ──────────────────────────────────────────────────── */
+  /* ══ Dataframes ════════════════════════════════════════════════════ */
   [data-testid="stDataFrame"] {
-    border-radius: 0 !important; overflow: hidden;
-    border: 1px solid var(--border) !important; box-shadow: none !important;
+    border-radius: var(--r2) !important; overflow: hidden;
+    border: 1px solid var(--border) !important; box-shadow: var(--sh1);
   }
 
-  /* ── Main area labels & captions ────────────────────────────────── */
-  [data-testid="stCaptionContainer"],
-  [data-testid="stCaptionContainer"] p {
-    color: var(--muted) !important;
-    font-family: 'JetBrains Mono', monospace !important;
-    font-size: 0.6rem !important;
-    letter-spacing: 0.05em !important;
-  }
-  [data-testid="stWidgetLabel"] p,
-  .stApp .stRadio > label,
-  .stApp .stCheckbox > label {
-    color: var(--text2) !important;
-    font-family: 'JetBrains Mono', monospace !important;
-    font-size: 0.6rem !important;
-    letter-spacing: 0.07em !important;
-    text-transform: uppercase !important;
-  }
-  [data-testid="stMarkdownContainer"] p { color: var(--text) !important; }
-  [data-testid="stMarkdownContainer"] small { color: var(--muted) !important; }
-
-  /* ── Main area sliders ────────────────────────────────────────────── */
-  .stMain [data-baseweb="slider"] > div:first-child {
-    background: rgba(255,255,255,0.08) !important;
-    border-radius: 0 !important;
-  }
-  .stMain [data-baseweb="slider"] > div:first-child > div {
-    background: var(--blue2) !important;
-  }
-  .stMain [data-baseweb="slider"] [role="slider"] {
-    background: var(--white) !important;
-    border: 2px solid var(--blue2) !important;
-    border-radius: 0 !important;
-    box-shadow: 0 0 0 4px rgba(46,116,232,0.2) !important;
-  }
-
-  /* ── Misc ────────────────────────────────────────────────────────── */
-  .custom-divider { border: none; border-top: 1px solid var(--border); margin: 2rem 0; }
-  .stAlert { border-radius: 0 !important; border: 1px solid var(--border) !important; }
+  /* ══ Misc ══════════════════════════════════════════════════════════ */
+  .custom-divider { border: none; border-top: 1px solid var(--border); margin: 28px 0; }
+  .stAlert { border-radius: var(--r2) !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -482,37 +349,22 @@ st.markdown("""
 
 _CHART_RC: dict = {
     "font.family":       "sans-serif",
-    "font.size":         9,
+    "font.size":         10,
     "axes.spines.top":   False,
     "axes.spines.right": False,
-    "axes.facecolor":    "#0c1828",
-    "figure.facecolor":  "#0c1828",
-    "axes.edgecolor":    "#1c3a68",
+    "axes.facecolor":    "#fafbfc",
+    "figure.facecolor":  "white",
     "axes.grid":         True,
-    "grid.alpha":        0.1,
-    "grid.color":        "#ffffff",
-    "grid.linewidth":    0.5,
-    "axes.labelcolor":   "#4a6a8a",
-    "xtick.color":       "#2a4a6a",
-    "ytick.color":       "#2a4a6a",
-    "text.color":        "#6a8aaa",
-    "legend.facecolor":  "#0c1828",
-    "legend.edgecolor":  "#1c3a68",
-    "legend.labelcolor": "#8aaac8",
-    "axes.labelsize":    8,
-    "xtick.labelsize":   8,
-    "ytick.labelsize":   8,
+    "grid.alpha":        0.35,
+    "grid.color":        "#dde3ee",
+    "grid.linewidth":    0.7,
+    "axes.labelcolor":   "#4a5568",
+    "xtick.color":       "#718096",
+    "ytick.color":       "#718096",
+    "axes.labelsize":    9,
+    "xtick.labelsize":   9,
+    "ytick.labelsize":   9,
 }
-
-# Shared chart palette — keep figures consistent with the UI accent system.
-C_TEAL   = "#00e0a4"   # signature data accent (values, optimal points)
-C_BLUE   = "#2e74e8"   # structure / median lines
-C_GREEN  = "#3ec97a"   # positive / upside
-C_RED    = "#e05a5a"   # negative / downside
-C_AMBER  = "#f0a040"   # caution / current-position marker
-C_PANEL  = "#0c1828"   # panel background
-C_GRID   = "#1c3a68"   # spines / faint structure
-C_TITLE  = "#8aaac8"   # chart titles
 
 # ---------------------------------------------------------------------------
 # UI helpers
@@ -571,12 +423,6 @@ DEFAULT_RISK_MODEL = {
     "QQQ":  (0.10, 0.22, 0.65, 0.30, 0.00),
     "SGOV": (0.045, 0.01, 0.01, 0.00, 0.00),
     "BIL":  (0.045, 0.01, 0.01, 0.00, 0.00),
-    # ── Portfolio positions added to known-ticker list ───────────────────────
-    "HUBB":  (0.09, 0.28, 0.50, 0.05, 0.20),  # electrical grid infra / industrial
-    "TCEHY": (0.07, 0.45, 0.30, 0.15, 0.00),  # Tencent ADR; China discount + high idio
-    "MOG-A": (0.08, 0.28, 0.40, 0.05, 0.00),  # Moog aerospace & defense actuation
-    "MIR":   (0.08, 0.55, 0.30, 0.00, 0.25),  # Mirion nuclear/radiation; small-cap
-    "XRP":   (0.10, 0.90, 0.20, 0.00, 0.00),  # XRP crypto; tail-bet sizing
 }
 
 GENERIC = (0.08, 0.40, 0.20, 0.20, 0.00)
@@ -662,7 +508,7 @@ STRESS_SYS_BOOST = 1.50
 # Preset definitions: list of (ticker, target_dollars)
 # Shares are computed from live prices at load time; total notional = $10,000
 PRESETS: dict[str, list[tuple[str, float]] | None] = {
-    "Sample Portfolio": None,  # loaded from HOLDINGS_FILE (demo by default)
+    "My Portfolio":    None,   # loaded from holdings.json
     "Conservative":    [("VOO", 5000), ("SGOV", 3000), ("QQQ", 2000)],
     "Moderate Growth": [("VOO", 6000), ("QQQ", 2000), ("META", 1000), ("NVDA", 1000)],
     "Aggressive AI":   [("NVDA", 1250), ("AVGO", 1250), ("MRVL", 1250), ("ALAB", 1250),
@@ -671,25 +517,25 @@ PRESETS: dict[str, list[tuple[str, float]] | None] = {
 }
 
 _PRESET_META: dict[str, dict] = {
-    "Sample Portfolio": {"icon": "DEMO", "desc": "Illustrative AI/semis book loaded from the holdings file, with cash position"},
-    "Conservative":    {"icon": "CONS", "desc": "60% VOO · 30% SGOV · 10% QQQ — capital preservation"},
-    "Moderate Growth": {"icon": "BALA", "desc": "60% VOO · 20% QQQ · 20% growth — balanced risk/return"},
-    "Aggressive AI":   {"icon": "AGGR", "desc": "8-stock AI/semis basket — NVDA AVGO MRVL ALAB COHR ASML GOOG AMAT"},
-    "100% Index":      {"icon": "INDX", "desc": "100% VOO — pure market-cap exposure, SPX beta ≈ 1"},
+    "My Portfolio":    {"icon": "💼", "desc": "Live holdings from holdings.json with cash position"},
+    "Conservative":    {"icon": "🛡️", "desc": "60% VOO · 30% SGOV · 10% QQQ — capital preservation"},
+    "Moderate Growth": {"icon": "📈", "desc": "60% VOO · 20% QQQ · 20% growth — balanced risk/return"},
+    "Aggressive AI":   {"icon": "🚀", "desc": "8-stock AI/semis basket — NVDA AVGO MRVL ALAB COHR ASML GOOG AMAT"},
+    "100% Index":      {"icon": "📊", "desc": "100% VOO — pure market-cap exposure, SPX beta ≈ 1"},
 }
 
 _SCENARIO_META: dict[str, dict] = {
-    "Base case":      {"icon": "BASE", "label": "Base Case",      "desc": "Historical avg returns, normal vol, standard crash frequency"},
-    "AI boom":        {"icon": "BULL", "label": "AI Boom",        "desc": "AI factor μ +20%, vol compressed, lower crash probability"},
-    "Soft landing":   {"icon": "SOFT", "label": "Soft Landing",   "desc": "Fed threads needle — modest μ lift, vol ×0.75, crash risk halved"},
-    "Mild bear":      {"icon": "BEAR", "label": "Mild Bear",      "desc": "μ −10%, vol ×1.2, mild fat tails — multi-quarter correction"},
-    "Risk-off":       {"icon": "ROFF", "label": "Risk-Off",       "desc": "Broad μ −20%, AI −25%, vol ×1.4, elevated crash frequency"},
-    "Rate shock":     {"icon": "RATE", "label": "Rate Shock",     "desc": "2022 analog — AI beta compressed 35%, market beta spikes, t(6) tails"},
-    "Stagflation":    {"icon": "STAG", "label": "Stagflation",    "desc": "1970s analog — real returns negative, AI factor loses relevance"},
-    "Tech regulation":{"icon": "TREG", "label": "Tech Reg",       "desc": "DOJ/EU antitrust — AI beta down 30%, vol ×1.3, t(8) tails"},
-    "AI winter":      {"icon": "AIWN", "label": "AI Winter",      "desc": "Monetization disappoints — AI factor −55%, jumps (λ=2/yr), t(5) tails"},
-    "Flash crash":    {"icon": "TAIL", "label": "Flash Crash",    "desc": "Extreme tail — 2008/COVID analog; jumps (λ=4/yr), vol ×3, t(3) tails"},
-    "Custom":         {"icon": "CUST", "label": "Custom",         "desc": "Set μ shift, AI boost, and vol multiplier manually"},
+    "Base case":      {"icon": "📊", "label": "Base Case",      "desc": "Historical avg returns, normal vol, standard crash frequency"},
+    "AI boom":        {"icon": "🚀", "label": "AI Boom",        "desc": "AI factor μ +20%, vol compressed, lower crash probability"},
+    "Soft landing":   {"icon": "🌤️", "label": "Soft Landing",   "desc": "Fed threads needle — modest μ lift, vol ×0.75, crash risk halved"},
+    "Mild bear":      {"icon": "🐻", "label": "Mild Bear",      "desc": "μ −10%, vol ×1.2, mild fat tails — multi-quarter correction"},
+    "Risk-off":       {"icon": "🛡️", "label": "Risk-Off",       "desc": "Broad μ −20%, AI −25%, vol ×1.4, elevated crash frequency"},
+    "Rate shock":     {"icon": "📈", "label": "Rate Shock",     "desc": "2022 analog — AI beta compressed 35%, market beta spikes, t(6) tails"},
+    "Stagflation":    {"icon": "🔥", "label": "Stagflation",    "desc": "1970s analog — real returns negative, AI factor loses relevance"},
+    "Tech regulation":{"icon": "⚖️", "label": "Tech Reg",      "desc": "DOJ/EU antitrust — AI beta down 30%, vol ×1.3, t(8) tails"},
+    "AI winter":      {"icon": "❄️", "label": "AI Winter",      "desc": "Monetization disappoints — AI factor −55%, jumps (λ=2/yr), t(5) tails"},
+    "Flash crash":    {"icon": "💥", "label": "Flash Crash",    "desc": "Extreme tail — 2008/COVID analog; jumps (λ=4/yr), vol ×3, t(3) tails"},
+    "Custom":         {"icon": "⚙️", "label": "Custom",         "desc": "Set μ shift, AI boost, and vol multiplier manually"},
 }
 
 # ---------------------------------------------------------------------------
@@ -980,161 +826,6 @@ def factor_exposure(df: pd.DataFrame,
     fp = float(np.sum(w * df["f_power"].fillna(0.0).astype(float).to_numpy()))
     fi = max(0.0, 1.0 - fm - fa - fp)
     return {"f_market": fm, "f_ai": fa, "f_power": fp, "f_idio": fi}
-
-
-# ---------------------------------------------------------------------------
-# Mean-variance optimization (efficient frontier)
-#
-# Covariance is built from the same 3-factor risk model the simulator uses:
-#     Σ = B · diag(σ_f²) · Bᵀ + diag(idiosyncratic)
-# The historical risk model orthogonalizes the SPY / SMH / URA proxies
-# (Gram-Schmidt), so the factors are treated as uncorrelated and the factor
-# covariance is diagonal. This makes Σ positive semidefinite by construction
-# and ties portfolio risk back to systematic (market / AI / power) drivers
-# rather than a noisy raw sample covariance.
-# ---------------------------------------------------------------------------
-
-# Annualized systematic factor vols: market (SPY), AI (SMH), power (URA).
-_FACTOR_VOLS = np.array([SPX_SIGMA, SMH_SIGMA, URA_SIGMA])  # market, ai, power
-# Tiny positivity guard: only bites when factor loadings explain more variance
-# than the asset's stated total vol. Low-vol assets (e.g. CASH) keep their true
-# near-zero idiosyncratic risk.
-_IDIO_VAR_FLOOR = 1e-6
-
-
-def build_cov_matrix(tickers: tuple[str, ...], mu_t: tuple[float, ...],
-                     sig_t: tuple[float, ...],
-                     loadings_t: tuple[tuple[float, float, float], ...]
-                     ) -> tuple[np.ndarray, np.ndarray]:
-    """Factor-structured annual covariance Σ and expected-return vector μ."""
-    mu  = np.asarray(mu_t, dtype=float)
-    sig = np.asarray(sig_t, dtype=float)
-    B   = np.asarray(loadings_t, dtype=float).reshape(len(tickers), 3)
-    fac_var    = _FACTOR_VOLS ** 2                       # (3,)
-    systematic = B @ np.diag(fac_var) @ B.T              # (n, n)
-    explained  = np.einsum("ij,j,ij->i", B, fac_var, B)  # diag of systematic
-    idio       = np.maximum(sig ** 2 - explained, _IDIO_VAR_FLOOR)
-    cov        = systematic + np.diag(idio)
-    return mu, cov
-
-
-def _port_stats(w: np.ndarray, mu: np.ndarray, cov: np.ndarray,
-                rf: float) -> tuple[float, float, float]:
-    ret = float(w @ mu)
-    vol = float(np.sqrt(max(w @ cov @ w, 1e-18)))
-    sharpe = (ret - rf) / vol if vol > 1e-12 else 0.0
-    return ret, vol, sharpe
-
-
-def _solve(mu: np.ndarray, cov: np.ndarray, rf: float, cap: float,
-           objective: str, target: float | None = None) -> np.ndarray:
-    """SLSQP solve, long-only, weights sum to 1, per-name cap. Falls back to
-    equal-weight if the optimizer fails to converge."""
-    n = len(mu)
-    cap = max(cap, 1.0 / n + 1e-9)          # keep the simplex feasible
-    x0 = np.full(n, 1.0 / n)
-    bounds = [(0.0, cap)] * n
-    cons = [{"type": "eq", "fun": lambda w: w.sum() - 1.0}]
-    if objective == "sharpe":
-        def fun(w):
-            v = np.sqrt(max(w @ cov @ w, 1e-18))
-            return -(w @ mu - rf) / v
-    elif objective == "target":
-        cons.append({"type": "eq", "fun": lambda w, t=target: float(w @ mu - t)})
-        fun = lambda w: float(w @ cov @ w)
-    else:  # minvar
-        fun = lambda w: float(w @ cov @ w)
-    res = minimize(fun, x0, method="SLSQP", bounds=bounds, constraints=cons,
-                   options={"maxiter": 500, "ftol": 1e-10})
-    w = res.x if res.success else x0
-    w = np.clip(w, 0.0, None)
-    s = w.sum()
-    return w / s if s > 0 else x0
-
-
-@st.cache_data(show_spinner=False)
-def compute_frontier(tickers: tuple[str, ...], mu_t: tuple[float, ...],
-                     sig_t: tuple[float, ...],
-                     loadings_t: tuple[tuple[float, float, float], ...],
-                     cur_w_t: tuple[float, ...],
-                     rf: float, cap: float, n_random: int = 6000,
-                     n_curve: int = 45, seed: int = 7) -> dict:
-    """Everything the Optimizer tab needs, cached on a hashable signature.
-    Returns random cloud, analytical frontier, and the three key portfolios."""
-    mu, cov = build_cov_matrix(tickers, mu_t, sig_t, loadings_t)
-    n = len(mu)
-
-    # Random long-only cloud (Dirichlet → naturally sums to 1).
-    rng = np.random.default_rng(seed)
-    W = rng.dirichlet(np.ones(n), size=n_random)
-    cloud_ret = W @ mu
-    cloud_vol = np.sqrt(np.einsum("ij,jk,ik->i", W, cov, W))
-    cloud_shp = np.where(cloud_vol > 1e-12, (cloud_ret - rf) / cloud_vol, 0.0)
-
-    # Analytical efficient frontier (min variance per target return).
-    cap_eff = max(cap, 1.0 / n + 1e-9)
-    f_lo, f_hi = float(mu.min()), float(mu.max())
-    fr_vol, fr_ret = [], []
-    for t in np.linspace(f_lo, f_hi, n_curve):
-        w = _solve(mu, cov, rf, cap_eff, "target", target=t)
-        r, v, _ = _port_stats(w, mu, cov, rf)
-        fr_vol.append(v); fr_ret.append(r)
-
-    # Key portfolios.
-    w_sharpe = _solve(mu, cov, rf, cap_eff, "sharpe")
-    w_minvar = _solve(mu, cov, rf, cap_eff, "minvar")
-    cur_w = np.asarray(cur_w_t, dtype=float)
-    cur_w = cur_w / cur_w.sum() if cur_w.sum() > 0 else np.full(n, 1.0 / n)
-
-    def pack(w):
-        r, v, s = _port_stats(w, mu, cov, rf)
-        return {"w": w.tolist(), "ret": r, "vol": v, "sharpe": s}
-
-    return {
-        "tickers":  list(tickers),
-        "cloud":    {"vol": cloud_vol.tolist(), "ret": cloud_ret.tolist(),
-                     "sharpe": cloud_shp.tolist()},
-        "frontier": {"vol": fr_vol, "ret": fr_ret},
-        "current":  pack(cur_w),
-        "max_sharpe": pack(w_sharpe),
-        "min_var":    pack(w_minvar),
-        "rf": rf, "cap": cap_eff,
-    }
-
-
-def frontier_chart(payload: dict) -> plt.Figure:
-    cloud = payload["cloud"]
-    fr    = payload["frontier"]
-    with plt.rc_context(_CHART_RC):
-        fig, ax = plt.subplots(figsize=(8.4, 5.0))
-        sc = ax.scatter(np.array(cloud["vol"]) * 100, np.array(cloud["ret"]) * 100,
-                        c=cloud["sharpe"], cmap="viridis", s=6, alpha=0.35,
-                        linewidths=0, zorder=1)
-        cbar = fig.colorbar(sc, ax=ax, pad=0.01)
-        cbar.set_label("Sharpe", color=C_TITLE, fontsize=8)
-        cbar.ax.tick_params(colors="#2a4a6a", labelsize=7)
-        cbar.outline.set_edgecolor(C_GRID)
-        ax.plot(np.array(fr["vol"]) * 100, np.array(fr["ret"]) * 100,
-                color=C_TITLE, lw=1.6, ls="--", alpha=0.8, zorder=3,
-                label="Efficient frontier")
-        for key, color, marker, lbl in [
-            ("max_sharpe", C_TEAL,  "*", "Max Sharpe"),
-            ("min_var",    C_BLUE,  "D", "Min variance"),
-            ("current",    C_AMBER, "o", "Current"),
-        ]:
-            p = payload[key]
-            ax.scatter(p["vol"] * 100, p["ret"] * 100, color=color,
-                       marker=marker, s=190 if marker == "*" else 90,
-                       edgecolor="#07101e", linewidth=1.0, zorder=6, label=lbl)
-        ax.set_xlabel("Annualized volatility  (%)")
-        ax.set_ylabel("Expected return  (%)")
-        ax.set_title("Efficient frontier — factor-model covariance", fontsize=9,
-                     fontweight="bold", color=C_TITLE, pad=10)
-        ax.legend(loc="lower right", fontsize=7.5, framealpha=0.85)
-        ax.spines["left"].set_color(C_GRID)
-        ax.spines["bottom"].set_color(C_GRID)
-        plt.tight_layout()
-    return fig
 
 
 # ---------------------------------------------------------------------------
@@ -1510,19 +1201,19 @@ def fan_chart(port, title=""):
     months = np.arange(port.shape[1])
     with plt.rc_context(_CHART_RC):
         fig, ax = plt.subplots(figsize=(8, 4.2))
-        ax.fill_between(months, bands[0], bands[4], alpha=0.07, color=C_BLUE, label="P10–P90")
-        ax.fill_between(months, bands[1], bands[3], alpha=0.18, color=C_BLUE, label="P25–P75")
-        ax.plot(months, bands[2], color=C_TEAL, lw=2.5, label="Median", zorder=5)
-        ax.plot(months, bands[0], color="#ffffff", lw=0.7, alpha=0.2, linestyle="--")
-        ax.plot(months, bands[4], color="#ffffff", lw=0.7, alpha=0.2, linestyle="--")
+        ax.fill_between(months, bands[0], bands[4], alpha=0.12, color=NAVY, label="P10–P90")
+        ax.fill_between(months, bands[1], bands[3], alpha=0.25, color=NAVY, label="P25–P75")
+        ax.plot(months, bands[2], color=GOLD, lw=2.5, label="Median", zorder=5)
+        ax.plot(months, bands[0], color=NAVY, lw=0.9, alpha=0.45, linestyle="--")
+        ax.plot(months, bands[4], color=NAVY, lw=0.9, alpha=0.45, linestyle="--")
         ax.set_xlabel("Month")
         ax.set_ylabel("Portfolio value")
         if title:
-            ax.set_title(title, fontsize=9, fontweight="bold", color="#8aaac8", pad=10)
-        ax.legend(loc="upper left", fontsize=7, framealpha=0.8)
+            ax.set_title(title, fontsize=10, fontweight="bold", color=NAVY, pad=10)
+        ax.legend(loc="upper left", fontsize=8, framealpha=0.9)
         ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f"${x:,.0f}"))
-        ax.spines["left"].set_color("#1c3a68")
-        ax.spines["bottom"].set_color("#1c3a68")
+        ax.spines["left"].set_color("#dde3ee")
+        ax.spines["bottom"].set_color("#dde3ee")
         plt.tight_layout()
     return fig
 
@@ -1532,21 +1223,21 @@ def hist_chart(port, title="", capital: float | None = None):
     p10, p50, p90 = np.percentile(end, [10, 50, 90])
     with plt.rc_context(_CHART_RC):
         fig, ax = plt.subplots(figsize=(8, 4.2))
-        ax.hist(end, bins=80, color="#2e74e8", alpha=0.5, edgecolor="#0c1828", linewidth=0.3)
+        ax.hist(end, bins=80, color=NAVY, alpha=0.70, edgecolor="white", linewidth=0.3)
         if capital is not None:
-            ax.axvline(capital, color="#4a6a8a", lw=1.2, linestyle=":",
+            ax.axvline(capital, color="#718096", lw=1.2, linestyle=":",
                        label=f"Capital  ${capital:,.0f}", zorder=4)
-        ax.axvline(p10, color="#e05a5a", lw=2,   label=f"P10  ${p10:,.0f}", zorder=5)
-        ax.axvline(p50, color="#2e74e8", lw=2.5, label=f"P50  ${p50:,.0f}", zorder=5)
-        ax.axvline(p90, color="#3ec97a", lw=2,   label=f"P90  ${p90:,.0f}", zorder=5)
+        ax.axvline(p10, color=RED,       lw=2,   label=f"P10  ${p10:,.0f}", zorder=5)
+        ax.axvline(p50, color=GOLD,      lw=2.5, label=f"P50  ${p50:,.0f}", zorder=5)
+        ax.axvline(p90, color="#27ae60", lw=2,   label=f"P90  ${p90:,.0f}", zorder=5)
         ax.set_xlabel("Terminal value")
         ax.set_ylabel("Paths")
         if title:
-            ax.set_title(title, fontsize=9, fontweight="bold", color="#8aaac8", pad=10)
-        ax.legend(fontsize=7, framealpha=0.8)
+            ax.set_title(title, fontsize=10, fontweight="bold", color=NAVY, pad=10)
+        ax.legend(fontsize=8, framealpha=0.9)
         ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f"${x:,.0f}"))
-        ax.spines["left"].set_color("#1c3a68")
-        ax.spines["bottom"].set_color("#1c3a68")
+        ax.spines["left"].set_color("#dde3ee")
+        ax.spines["bottom"].set_color("#dde3ee")
         plt.tight_layout()
     return fig
 
@@ -1569,22 +1260,22 @@ def allocation_donut(enriched: pd.DataFrame) -> plt.Figure | None:
     labels  = d["ticker"].values
 
     palette = [
-        "#2e74e8", "#1a5fd4", "#1248a8", "#4a90d4", "#7ab0e8",
-        "#3ec97a", "#0e9f58", "#f0a040", "#e05a5a", "#5a7a9a",
+        "#1e3a5f", "#2d5282", "#4a7fb5", "#6499cc", "#8ab4d9",
+        "#b8860b", "#d4a017", "#f0c040", "#f5d060", "#fae090",
     ]
     colors = palette[:len(weights)]
 
     with plt.rc_context(_CHART_RC):
         fig, ax = plt.subplots(figsize=(4.8, 4.0))
-        fig.patch.set_facecolor("#0c1828")
+        fig.patch.set_facecolor("white")
         wedges, _ = ax.pie(
             weights, labels=None, colors=colors, startangle=90,
-            wedgeprops=dict(width=0.54, edgecolor="#0c1828", linewidth=2.5),
+            wedgeprops=dict(width=0.54, edgecolor="white", linewidth=2.5),
         )
         legend_labels = [f"{t}  {w*100:.1f}%" for t, w in zip(labels, weights)]
         ax.legend(wedges, legend_labels, loc="center left", bbox_to_anchor=(0.92, 0.5),
-                  fontsize=7, frameon=False)
-        ax.set_title("Allocation", fontsize=9, fontweight="bold", color="#8aaac8", pad=8)
+                  fontsize=8, frameon=False)
+        ax.set_title("Allocation", fontsize=10, fontweight="bold", color=NAVY, pad=8)
         plt.tight_layout()
     return fig
 
@@ -1596,10 +1287,10 @@ def factor_exposure_bar(enriched: pd.DataFrame) -> plt.Figure | None:
 
     d["f_idio"] = (1 - d["f_market"] - d["f_ai"] - d["f_power"]).clip(0, 1)
     factor_map = {
-        "Market":        ("f_market", "#2e74e8"),
-        "AI / Tech":     ("f_ai",     "#3ec97a"),
-        "Power":         ("f_power",  "#f0a040"),
-        "Idiosyncratic": ("f_idio",   "#4a6a8a"),
+        "Market":        ("f_market", "#2d5282"),
+        "AI / Tech":     ("f_ai",     "#b8860b"),
+        "Power":         ("f_power",  "#27ae60"),
+        "Idiosyncratic": ("f_idio",   "#94a3b8"),
     }
 
     labels, vals, colors = [], [], []
@@ -1618,12 +1309,12 @@ def factor_exposure_bar(enriched: pd.DataFrame) -> plt.Figure | None:
         bars = ax.barh(labels, vals, color=colors, height=0.48, edgecolor="none")
         for bar, v in zip(bars, vals):
             ax.text(v + 0.005, bar.get_y() + bar.get_height() / 2,
-                    f"{v*100:.0f}%", va="center", fontsize=8, color="#8aaac8", fontweight="600")
+                    f"{v*100:.0f}%", va="center", fontsize=9, color="#4a5568", fontweight="600")
         ax.set_xlim(0, max(vals) * 1.28 if vals else 1)
         ax.set_xlabel("Weighted exposure")
-        ax.set_title("Factor exposure", fontsize=9, fontweight="bold", color="#8aaac8", pad=8)
-        ax.spines["left"].set_color("#1c3a68")
-        ax.spines["bottom"].set_color("#1c3a68")
+        ax.set_title("Factor exposure", fontsize=10, fontweight="bold", color=NAVY, pad=8)
+        ax.spines["left"].set_color("#dde3ee")
+        ax.spines["bottom"].set_color("#dde3ee")
         plt.tight_layout()
     return fig
 
@@ -1811,15 +1502,15 @@ def historical_chart(port_series: pd.Series, spx_series: pd.Series, title: str =
     s_norm = s.loc[common] / s.loc[common].iloc[0] * 100
     with plt.rc_context(_CHART_RC):
         fig, ax = plt.subplots(figsize=(9, 4.2))
-        ax.plot(p_norm.index, p_norm.values, color=GOLD, lw=2.2, label="Portfolio")
-        ax.plot(s_norm.index, s_norm.values, color="#4a6a8a", lw=1.5,
+        ax.plot(p_norm.index, p_norm.values, color=NAVY, lw=2.2, label="Portfolio")
+        ax.plot(s_norm.index, s_norm.values, color="#94a3b8", lw=1.5,
                 linestyle="--", label="SPY")
         ax.set_ylabel("Indexed (start = 100)")
         if title:
-            ax.set_title(title, fontsize=10, fontweight="bold", color="#8aaac8", pad=10)
+            ax.set_title(title, fontsize=10, fontweight="bold", color=NAVY, pad=10)
         ax.legend(fontsize=8, framealpha=0.9)
-        ax.spines["left"].set_color("#1c3a68")
-        ax.spines["bottom"].set_color("#1c3a68")
+        ax.spines["left"].set_color("#dde3ee")
+        ax.spines["bottom"].set_color("#dde3ee")
         plt.tight_layout()
     return fig
 
@@ -1833,9 +1524,9 @@ def rolling_vol_chart(port_series: pd.Series, window: int = 90) -> plt.Figure:
         ax.fill_between(rolling_vol.index, 0, rolling_vol.values, alpha=0.15, color=GOLD)
         ax.set_ylabel("Annualized vol (%)")
         ax.set_title(f"Rolling {window}-day volatility", fontsize=10,
-                     fontweight="bold", color="#8aaac8", pad=8)
-        ax.spines["left"].set_color("#1c3a68")
-        ax.spines["bottom"].set_color("#1c3a68")
+                     fontweight="bold", color=NAVY, pad=8)
+        ax.spines["left"].set_color("#dde3ee")
+        ax.spines["bottom"].set_color("#dde3ee")
         plt.tight_layout()
     return fig
 
@@ -1881,7 +1572,7 @@ def advisor_summary_html(name: str, stats: dict, horizon_y: int,
     years_from_now = datetime.now().year + horizon_y
     return f"""
 <div class="advisor-card">
-  <h4>{horizon_y}-Year Outlook — {name} &nbsp;·&nbsp; {regime_name}</h4>
+  <h4>📊 {horizon_y}-Year Outlook — {name} &nbsp;·&nbsp; {regime_name}</h4>
   Starting from <strong>${starting_mv:,.0f}</strong>, your portfolio's most likely outcome is
   <strong>${stats['median']:,.0f}</strong> (median) by {years_from_now}.<br>
   In a great scenario (top 10%), you could reach <strong>${stats['p90']:,.0f}</strong>.<br>
@@ -1997,7 +1688,7 @@ if "regime_name" not in st.session_state:
     st.session_state.regime_name = "Base case"
 
 if "active_preset" not in st.session_state:
-    st.session_state.active_preset = "Sample Portfolio"
+    st.session_state.active_preset = "My Portfolio"
 
 # ---------------------------------------------------------------------------
 # Page header
@@ -2034,18 +1725,14 @@ _n_hold_str = str(_n_hold) if _n_hold else "—"
 st.markdown(f"""
 <div class="hero">
   <div class="hero-left">
-    <div class="hero-eyebrow">Quant Portfolio Analytics</div>
+    <div class="hero-eyebrow">Portfolio Analytics Platform</div>
     <h1>Portfolio Lab</h1>
-    <p class="hero-sub">Factor-model Monte Carlo engine with Heston stochastic volatility,
-    Merton jump-diffusion, fat-tailed shocks, and Markov regime switching — plus mean-variance
-    optimization and multi-benchmark analytics against SPY, SMH, and URA.</p>
+    <p class="hero-sub">Factor-model Monte Carlo simulator with 2-state Markov regime-switching
+    correlations, live prices, and multi-benchmark analytics against SPY, SMH, and URA.</p>
     <div class="hero-pills">
-      <span class="hero-pill">Heston SV</span>
-      <span class="hero-pill">Merton Jumps</span>
-      <span class="hero-pill">Fat Tails</span>
-      <span class="hero-pill">Mean-Variance</span>
+      <span class="hero-pill">3-Factor GBM</span>
+      <span class="hero-pill">Regime Switching</span>
       <span class="hero-pill">SPY · SMH · URA</span>
-      <span class="hero-pill demo">Sample data</span>
       <span class="hero-pill live">Prices {_latest_price_ts()}</span>
     </div>
   </div>
@@ -2068,100 +1755,7 @@ st.markdown(f"""
 
 price_warn = st.empty()
 
-# ---------------------------------------------------------------------------
-# Broad ticker universe — powers multiselect search coverage.
-# Symbols here that are absent from DEFAULT_RISK_MODEL fall back to GENERIC.
-# ---------------------------------------------------------------------------
-_TICKER_UNIVERSE: set = {
-    # ── Mega-cap tech ────────────────────────────────────────────────────────
-    "TSLA", "AMD", "INTC", "QCOM", "TXN", "MU", "NFLX", "DIS", "ORCL",
-    "CRM", "NOW", "ADBE", "INTU", "PANW", "FTNT", "CRWD", "ZS", "OKTA",
-    "SNOW", "PLTR", "DDOG", "NET", "CFLT", "MDB", "ESTC", "GTLB", "BILL",
-    "SHOP", "SE", "UBER", "LYFT", "DASH", "ABNB", "BKNG", "EXPE", "TRIP",
-    "PINS", "SNAP", "RBLX", "U", "TTWO", "EA", "ATVI", "NTES", "BILI",
-    "ARM", "SMCI", "DELL", "HPE", "WDC", "STX", "LRCX", "KLAC", "ONTO",
-    "TER", "ENTG", "WOLF", "MKSI", "ACLS", "CEVA", "ALGM", "DIOD", "MPWR",
-    "SLAB", "SWKS", "QRVO", "MTSI", "RMBS", "SITM", "AMBA", "CRUS", "ADI",
-    "MCHP", "NXPI", "ON", "IFNNY", "SSNLF",
-    # ── China / International ADRs ───────────────────────────────────────────
-    "BIDU", "JD", "PDD", "BABA", "NIO", "LI", "XPEV", "BEKE", "TME", "IQ",
-    "VNET", "GDS", "KSCP", "FUTU", "TIGR", "NOAH", "LAIX", "CNF", "ACH",
-    # ── Financials ───────────────────────────────────────────────────────────
-    "JPM", "BAC", "GS", "MS", "WFC", "C", "USB", "PNC", "TFC", "KEY",
-    "CFG", "FITB", "HBAN", "RF", "MTB", "ZION", "CMA", "FHN", "WAL",
-    "PACW", "BRK-B", "V", "MA", "PYPL", "AXP", "BLK", "SCHW", "IBKR",
-    "AMTD", "WEX", "FIS", "FISV", "GPN", "SQ", "AFRM", "UPST", "LC",
-    "SOFI", "NU", "OPEN", "UWMC", "RKT", "PFSI", "COOP", "NMR", "DB",
-    # ── Healthcare / Biotech ─────────────────────────────────────────────────
-    "JNJ", "PFE", "MRK", "ABBV", "LLY", "UNH", "CVS", "CI", "HUM", "ELV",
-    "CNC", "MOH", "WCG", "AMGN", "GILD", "REGN", "VRTX", "MRNA", "BNTX",
-    "NVAX", "SGEN", "ALNY", "BMRN", "RARE", "IONS", "DNLI", "RCKT", "KRYS",
-    "EDIT", "NTLA", "BEAM", "CRSP", "FATE", "BLUE", "ARVN", "KYMR", "CLOV",
-    "TDOC", "HIMS", "ACCD", "DOCS", "PHR", "VEEV", "IQVIA", "CRL", "MEDP",
-    "NEOG", "NVCR", "INVA", "SGFY", "EXAS", "ILMN", "PACB", "CDNA", "NTRA",
-    "TMO", "DHR", "A", "BIO", "TECH", "HOLX", "IDXX", "STE", "EW", "BSX",
-    "MDT", "ZBH", "ISRG", "SYK", "BAX", "BDX", "ABT", "DXCM", "TNDM",
-    # ── Energy ───────────────────────────────────────────────────────────────
-    "XOM", "CVX", "COP", "SLB", "HAL", "BKR", "OXY", "DVN", "FANG",
-    "MPC", "VLO", "PSX", "PBF", "DKL", "ET", "EPD", "WMB", "KMI", "TRGP",
-    "OKE", "LNG", "CTRA", "APA", "EQT", "AR", "RRC", "SWN", "CHK",
-    "MRO", "HES", "PR", "MTDR", "VNOM", "DINO", "SM", "REI",
-    # ── Utilities / Clean energy ─────────────────────────────────────────────
-    "NEE", "DUK", "SO", "AEP", "EXC", "XEL", "WEC", "ES", "CMS", "AES",
-    "PEG", "PPL", "ETR", "FE", "NI", "EVRG", "OGE", "AVA", "NWE", "SPWR",
-    "ENPH", "SEDG", "RUN", "NOVA", "ARRY", "FSLR", "CSIQ", "JKS",
-    "BE", "PLUG", "FCEL", "BLDP", "HYLN", "NKLA", "RIVN", "LCID",
-    # ── Industrials / Aerospace & Defense ────────────────────────────────────
-    "CAT", "DE", "HON", "GE", "RTX", "LMT", "NOC", "BA", "GD", "L3H",
-    "HII", "TDG", "HEI", "AXON", "LDOS", "SAIC", "CACI", "MANT", "BAH",
-    "UPS", "FDX", "XPO", "ODFL", "SAIA", "WERN", "KNX", "JBHT",
-    "MMM", "EMR", "ITW", "PH", "ROK", "DOV", "AME", "GNRC", "ALLE", "IR",
-    "RXO", "GXO", "CHRW", "EXPD", "ECHO", "FWRD",
-    # ── Consumer Discretionary ───────────────────────────────────────────────
-    "WMT", "TGT", "COST", "HD", "LOW", "NKE", "MCD", "SBUX", "YUM",
-    "CMG", "DPZ", "DRI", "TXRH", "JACK", "WEN", "QSR", "WING", "CAVA",
-    "LULU", "PVH", "RL", "HBI", "UA", "UAA", "CROX", "DECK", "SKX",
-    "TJX", "ROST", "BURL", "GPS", "ANF", "AEO", "URBN", "BOOT",
-    "TSCO", "BBY", "GME", "AMC", "CVNA", "KMX", "AN", "LAD", "SAH",
-    "ORLY", "AZO", "AAP", "GPC", "LKQ", "MNRO",
-    # ── Consumer Staples ─────────────────────────────────────────────────────
-    "PG", "KO", "PEP", "PM", "MO", "MDLZ", "KHC", "CPB", "HRL", "CAG",
-    "GIS", "K", "SJM", "MKC", "CHD", "CLX", "CL", "EL", "ULTA", "REV",
-    "SFM", "SPTN", "UNFI", "KR", "SYY", "US",
-    # ── REITs ────────────────────────────────────────────────────────────────
-    "AMT", "PLD", "EQIX", "CCI", "SPG", "O", "VICI", "PSA", "EXR",
-    "AVB", "EQR", "MAA", "UDR", "CPT", "ESS", "NNN", "ADC", "STAG",
-    "IIPR", "COLD", "DRE", "FR", "WPT", "REXR", "EGP", "TRNO",
-    "VTR", "PEAK", "WELL", "HR", "MPW", "SBAC", "AMH", "INVH",
-    # ── Materials ────────────────────────────────────────────────────────────
-    "LIN", "APD", "NUE", "FCX", "NEM", "GOLD", "AEM", "AG", "PAAS",
-    "AA", "CENX", "KALU", "ARNC", "ATI", "CMC", "STLD", "WOR",
-    "ALB", "SQM", "LTHM", "LAC", "PLL", "SGML", "MP", "NOVS",
-    "MOS", "NTR", "CF", "ICL", "IPI",
-    # ── Space / Next-gen tech ────────────────────────────────────────────────
-    "RKLB", "LUNR", "ASTS", "ACHR", "JOBY", "LILM", "ARCHER",
-    "IONQ", "QUBT", "RGTI", "QBTS", "IBM",
-    "MSTR", "COIN", "MARA", "RIOT", "HUT", "CLSK", "BTBT", "CIFR",
-    # ── Popular ETFs ─────────────────────────────────────────────────────────
-    "GLD", "IAU", "GLDM", "SLV", "PSLV", "PPLT", "PALL",
-    "USO", "UNG", "BOIL", "KOLD", "UCO", "SCO",
-    "TLT", "IEF", "SHY", "GOVT", "HYG", "JNK", "LQD", "VCIT",
-    "EEM", "EFA", "VEA", "VWO", "EWZ", "EWJ", "EWY", "EWG", "EWU",
-    "FXI", "KWEB", "MCHI",
-    "VTI", "IVV", "SCHB", "ITOT", "SPTM",
-    "SMH", "SOXX", "XSD", "FTXL", "SOXL", "SOXS",
-    "ARKK", "ARKG", "ARKW", "ARKF", "ARKQ", "ARKX",
-    "TQQQ", "SPXL", "UPRO", "TECL", "FNGU",
-    "SQQQ", "SPXS", "UVXY", "SVXY", "VXX", "VIXY",
-    "XLK", "XLF", "XLV", "XLE", "XLI", "XLY", "XLP", "XLU", "XLB", "XLRE",
-    "GDX", "GDXJ", "SIL", "SILJ", "COPX", "URA", "URNM", "NLR",
-    "ICLN", "TAN", "FAN", "QCLN", "PBW",
-    "IBB", "XBI", "LABU", "LABD", "FBT",
-    "KRE", "KBE", "IAT", "IAI",
-    "IYT", "XTN", "JETS",
-}
-
-KNOWN_TICKERS = sorted(set(DEFAULT_RISK_MODEL.keys()) | _TICKER_UNIVERSE)
+KNOWN_TICKERS = sorted(DEFAULT_RISK_MODEL.keys())
 
 # ---------------------------------------------------------------------------
 # Preset quick-load bar
@@ -2257,9 +1851,8 @@ _divider()
 # ---------------------------------------------------------------------------
 
 book_names = list(st.session_state.books.keys())[:n_books]
-tabs = st.tabs(book_names + ["What-if", "Optimizer", "Analytics", "Factor diagnostics"])
-whatif_tab    = tabs[-4]
-optimizer_tab = tabs[-3]
+tabs = st.tabs(book_names + ["What-if", "Analytics", "Factor diagnostics"])
+whatif_tab    = tabs[-3]
 analytics_tab = tabs[-2]
 factor_tab    = tabs[-1]
 
@@ -2310,25 +1903,25 @@ for tab, name in zip(tabs, book_names):
                         preset_df = build_preset(preset_name)
                         st.session_state.books[name] = preset_df
                         st.session_state[active_key] = preset_name
-                        st.session_state[f"multisel_{name}"] = preset_df["ticker"].tolist()
+                        known = [t for t in preset_df["ticker"].tolist() if t in KNOWN_TICKERS]
+                        st.session_state[f"multisel_{name}"] = known
                         st.rerun()
 
         # --- Ticker management -------------------------------------------
         _section_label(f"Holdings — {name}")
 
         current_tickers = st.session_state.books[name]["ticker"].tolist()
-        # Options = every pre-defined ticker + anything already in this book so
-        # current positions are always searchable regardless of DEFAULT_RISK_MODEL coverage.
-        multisel_options = sorted(set(KNOWN_TICKERS) | set(current_tickers))
+        known_in_current = [t for t in current_tickers if t in KNOWN_TICKERS]
+        custom_in_current = [t for t in current_tickers if t not in KNOWN_TICKERS]
 
         col_sel, col_custom = st.columns([3, 1])
         with col_sel:
             selected_known = st.multiselect(
                 "Add / remove tickers",
-                options=multisel_options,
-                default=current_tickers,
+                options=KNOWN_TICKERS,
+                default=known_in_current,
                 key=f"multisel_{name}",
-                help="Select from known tickers. Use the field on the right for anything not listed.",
+                help="Select from known tickers. Use the field on the right for anything else.",
             )
         with col_custom:
             custom_input = st.text_input(
@@ -2345,6 +1938,10 @@ for tab, name in zip(tabs, book_names):
             for ct in custom_input.strip().upper().split():
                 if ct and ct not in new_tickers:
                     new_tickers.append(ct)
+        # Keep any custom tickers already in the book that aren't in the multiselect
+        for ct in custom_in_current:
+            if ct not in new_tickers:
+                new_tickers.append(ct)
 
         # Rebuild full book from new ticker list, preserving existing rows
         existing_full = st.session_state.books[name]
@@ -2419,7 +2016,7 @@ for tab, name in zip(tabs, book_names):
                 )
                 more = f" +{len(hist_overridden)-6} more" if len(hist_overridden) > 6 else ""
                 st.info(
-                    f"**Historical risk model active** ({hist_period}): "
+                    f"📊 **Historical risk model active** ({hist_period}): "
                     f"{len(hist_overridden)}/{len(hist_overridden)+len(hist_fallbacks)} "
                     f"tickers overridden with regression-derived σ and factor loadings.\n\n"
                     f"_{detail}{more}_"
@@ -2446,7 +2043,7 @@ for tab, name in zip(tabs, book_names):
                         "n_obs":     e["n_obs"],
                     })
                 with st.expander(
-                    f"Effective risk model (defaults vs historical) — {len(hist_overridden)} tickers",
+                    f"📈 Effective risk model (defaults vs historical) — {len(hist_overridden)} tickers",
                     expanded=False
                 ):
                     st.caption(
@@ -2462,7 +2059,7 @@ for tab, name in zip(tabs, book_names):
                     for t in hist_fallbacks
                 )
                 st.warning(
-                    f"Insufficient history — using hand-set defaults for: {fb_reasons}"
+                    f"⚠️ Insufficient history — using hand-set defaults for: {fb_reasons}"
                 )
 
         holdings_dfs[name] = enriched
@@ -2471,7 +2068,7 @@ for tab, name in zip(tabs, book_names):
         missing_tickers = detect_price_failures(enriched)
         if missing_tickers:
             price_warn.warning(
-                f"No price found for: **{', '.join(missing_tickers)}** — "
+                f"⚠️ No price found for: **{', '.join(missing_tickers)}** — "
                 "check for delisting or typo. These positions are excluded from MV and sim."
             )
 
@@ -2572,10 +2169,10 @@ for tab, name in zip(tabs, book_names):
                     except Exception:
                         return ""
                     if p >= 0.50:
-                        return "background-color: rgba(62,201,122,0.12); color: #3ec97a; font-weight:600"
+                        return "background-color: #16a34a22; color: #15803d; font-weight:600"
                     if p >= 0.25:
-                        return "background-color: rgba(240,160,64,0.12); color: #f0a040"
-                    return "background-color: rgba(224,90,90,0.12); color: #e05a5a"
+                        return "background-color: #ca8a0422; color: #b45309"
+                    return "background-color: #dc262622; color: #dc2626"
 
                 st.dataframe(
                     ladder_df.style.applymap(_ladder_color),
@@ -2738,7 +2335,7 @@ with whatif_tab:
         col_total, col_norm = st.columns([3, 1])
         with col_total:
             ok = abs(total - 1.0) < 0.005
-            color = "#3ec97a" if ok else "#e05a5a"
+            color = "#27ae60" if ok else "#c0392b"
             tail = " ✓" if ok else " — click Normalize to rescale to 100%"
             st.markdown(
                 f"<div style='font-size:1rem; padding:6px 0;'>"
@@ -2747,7 +2344,7 @@ with whatif_tab:
                 unsafe_allow_html=True,
             )
         with col_norm:
-            if st.button("Normalize to 100%", use_container_width=True,
+            if st.button("⚖ Normalize to 100%", use_container_width=True,
                          key="whatif_normalize", disabled=(total <= 0)):
                 st.session_state["whatif_normalize_pending"] = True
                 st.rerun()
@@ -2806,13 +2403,13 @@ with whatif_tab:
         _section_label("Composition  ·  current → what-if")
         cc1, cc2 = st.columns(2)
         with cc1:
-            st.markdown("<div style='text-align:center; font-weight:600; color:rgba(255,255,255,0.85);'>Current</div>",
+            st.markdown("<div style='text-align:center; font-weight:600; color:#374151;'>Current</div>",
                         unsafe_allow_html=True)
             fig = allocation_donut(src_df)
             if fig:
                 st.pyplot(fig); plt.close(fig)
         with cc2:
-            st.markdown("<div style='text-align:center; font-weight:600; color:rgba(255,255,255,0.85);'>What-if</div>",
+            st.markdown("<div style='text-align:center; font-weight:600; color:#374151;'>What-if</div>",
                         unsafe_allow_html=True)
             fig = allocation_donut(wf_df)
             if fig:
@@ -2824,7 +2421,7 @@ with whatif_tab:
         col_run, col_apply_b, col_apply_c = st.columns([2, 1, 1])
         with col_run:
             run_mc = st.button(
-                "Run Monte Carlo — What-if",
+                "⚡ Run Monte Carlo on what-if",
                 use_container_width=True, type="primary", key="whatif_run_mc",
             )
         def _commit_whatif_to_book(dest: str):
@@ -2835,7 +2432,9 @@ with whatif_tab:
             })
             merged = sync_risk_model(wf_simple, src_df)
             st.session_state.books[dest] = merged
-            st.session_state[f"multisel_{dest}"] = wf_simple["ticker"].tolist()
+            st.session_state[f"multisel_{dest}"] = [
+                t for t in wf_simple["ticker"] if t in KNOWN_TICKERS
+            ]
             st.success(f"✓ Applied to {dest}. Switch to that tab to view.")
 
         with col_apply_b:
@@ -2958,129 +2557,6 @@ with whatif_tab:
             st.info("Source book changed — re-run Monte Carlo to refresh.")
 
 # ---------------------------------------------------------------------------
-# Optimizer tab — mean-variance efficient frontier
-# ---------------------------------------------------------------------------
-
-with optimizer_tab:
-    _section_label("Mean-variance optimizer")
-    st.caption(
-        "Markowitz efficient frontier built from the simulator's **3-factor covariance** "
-        "(market / AI / power) rather than a raw sample covariance. Long-only, fully "
-        "invested. Compares your current book against the **max-Sharpe (tangency)** and "
-        "**minimum-variance** portfolios on the frontier."
-    )
-
-    opt_books = [
-        b for b in book_names
-        if isinstance(st.session_state.get(f"enriched_{b}"), pd.DataFrame)
-        and not st.session_state[f"enriched_{b}"].empty
-    ]
-
-    if not opt_books:
-        st.info("Load and price at least one book first — open a book tab, then return here.")
-    else:
-        c1, c2, c3 = st.columns([2, 1.4, 1.4])
-        with c1:
-            opt_src = st.radio("Optimize book", opt_books, horizontal=True, key="opt_src")
-        with c2:
-            rf_pct = st.number_input("Risk-free rate (%)", 0.0, 10.0, 4.5, 0.25,
-                                     key="opt_rf",
-                                     help="Annual. Used for the Sharpe ratio and the tangency portfolio.")
-        with c3:
-            cap_pct = st.slider("Max weight / name (%)", 10, 100, 100, 5, key="opt_cap",
-                                help="Per-position cap. 100% = unconstrained. Lower it to force diversification.")
-
-        edf = st.session_state[f"enriched_{opt_src}"].copy()
-        edf = edf.dropna(subset=["weight"])
-        edf = edf[edf["weight"] > 0].copy()
-        edf["ticker"] = edf["ticker"].astype(str)
-
-        if len(edf) < 2:
-            st.info("Need at least two priced positions to build a frontier.")
-        else:
-            tickers   = tuple(edf["ticker"].tolist())
-            mu_t      = tuple(float(x) for x in edf["mu"].fillna(SPX_MU))
-            sig_t     = tuple(float(x) for x in edf["sigma"].fillna(0.40))
-            loadings_t = tuple(
-                (float(m), float(a), float(p))
-                for m, a, p in zip(edf["f_market"].fillna(0.0),
-                                   edf["f_ai"].fillna(0.0),
-                                   edf["f_power"].fillna(0.0))
-            )
-            cur_w_t = tuple(float(x) for x in edf["weight"])
-            rf  = rf_pct / 100.0
-            cap = cap_pct / 100.0
-
-            with st.spinner("Solving frontier…"):
-                payload = compute_frontier(tickers, mu_t, sig_t, loadings_t,
-                                           cur_w_t, rf, cap)
-
-            cur, mxs, mnv = payload["current"], payload["max_sharpe"], payload["min_var"]
-
-            # KPI row — current vs optimal.
-            _kpi_row(
-                _kpi("Current Sharpe",   f"{cur['sharpe']:.2f}", "muted"),
-                _kpi("Max Sharpe",       f"{mxs['sharpe']:.2f}", "blue"),
-                _kpi("Min-Var Sharpe",   f"{mnv['sharpe']:.2f}", "muted"),
-                _kpi("Sharpe uplift",
-                     f"+{mxs['sharpe'] - cur['sharpe']:.2f}"
-                     if mxs['sharpe'] >= cur['sharpe']
-                     else f"{mxs['sharpe'] - cur['sharpe']:.2f}",
-                     "green" if mxs['sharpe'] >= cur['sharpe'] else "red"),
-            )
-            _kpi_row(
-                _kpi("Current E[r] / σ", f"{cur['ret']*100:.1f}% / {cur['vol']*100:.1f}%", "muted"),
-                _kpi("Max-Sharpe E[r] / σ", f"{mxs['ret']*100:.1f}% / {mxs['vol']*100:.1f}%", "blue"),
-                _kpi("Min-Var E[r] / σ", f"{mnv['ret']*100:.1f}% / {mnv['vol']*100:.1f}%", "muted"),
-                _kpi("Vol reduction (min-var)",
-                     f"{(cur['vol'] - mnv['vol'])*100:.1f} pp", "green"),
-            )
-
-            st.pyplot(frontier_chart(payload), use_container_width=True)
-            plt.close("all")
-
-            # Weights comparison table.
-            _section_label("Target weights vs current")
-            wtbl = pd.DataFrame({
-                "Ticker":      list(payload["tickers"]),
-                "Current %":   np.array(cur["w"]) * 100,
-                "Max-Sharpe %": np.array(mxs["w"]) * 100,
-                "Min-Var %":   np.array(mnv["w"]) * 100,
-            })
-            wtbl["Δ to Max-Sharpe"] = wtbl["Max-Sharpe %"] - wtbl["Current %"]
-            wtbl = wtbl.sort_values("Max-Sharpe %", ascending=False).reset_index(drop=True)
-            st.dataframe(
-                wtbl.style.format({
-                    "Current %": "{:.1f}", "Max-Sharpe %": "{:.1f}",
-                    "Min-Var %": "{:.1f}", "Δ to Max-Sharpe": "{:+.1f}",
-                }).background_gradient(subset=["Δ to Max-Sharpe"], cmap="RdYlGn",
-                                       vmin=-30, vmax=30),
-                use_container_width=True, hide_index=True,
-            )
-
-            # Plain-language read of the biggest suggested moves.
-            moves = wtbl.assign(delta=wtbl["Δ to Max-Sharpe"])
-            moves = moves.reindex(moves["delta"].abs().sort_values(ascending=False).index)
-            adds  = moves[moves["delta"] > 0.5].head(3)
-            trims = moves[moves["delta"] < -0.5].head(3)
-            bits = []
-            if not adds.empty:
-                bits.append("**add** " + ", ".join(
-                    f"{t} (+{d:.0f}pp)" for t, d in zip(adds["Ticker"], adds["delta"])))
-            if not trims.empty:
-                bits.append("**trim** " + ", ".join(
-                    f"{t} ({d:.0f}pp)" for t, d in zip(trims["Ticker"], trims["delta"])))
-            if bits:
-                st.markdown("To reach the max-Sharpe portfolio, " + " and ".join(bits) + ".")
-
-            st.caption(
-                "Theoretical mean-variance output, not advice. Expected returns are the "
-                "model's hand-set μ; covariance is Σ = B·diag(σ_f²)·Bᵀ + diag(idiosyncratic) "
-                "with factor vols σ = [16%, 28%, 35%] for market / AI / power."
-            )
-
-
-# ---------------------------------------------------------------------------
 # Analytics tab
 # ---------------------------------------------------------------------------
 
@@ -3175,7 +2651,7 @@ with factor_tab:
                 sns.heatmap(corr, ax=ax, annot=True, fmt=".2f", center=0,
                             cmap="RdBu_r", linewidths=0.4, square=True, vmin=0, vmax=1)
                 ax.set_title(f"Implied pairwise correlations — {sel}", fontsize=11,
-                             fontweight="bold", color="#8aaac8", pad=10)
+                             fontweight="bold", color=NAVY, pad=10)
                 plt.tight_layout()
             st.pyplot(fig)
             plt.close(fig)
